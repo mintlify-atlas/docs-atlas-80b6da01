@@ -1,0 +1,172 @@
+---
+title: "Running locally"
+description: "Start all three Kairo services and keep them running during development."
+---
+
+<Note>
+  Kairo requires all three services running at the same time: the Node.js API gateway, the Python AI microservice, and the frontend. Open three separate terminal windows before you begin.
+</Note>
+
+## Prerequisites
+
+Before starting, confirm you have:
+
+- Completed [Environment variables](/setup/environment) — both `.env` files exist
+- Completed [Database setup](/setup/database) — schema applied to Supabase
+- Node.js 18+, Python 3.10+, and a package manager (`npm`, `pip`) installed
+
+## Terminal A: Node.js gateway
+
+```bash
+cd backend-node
+npm install
+npm run dev
+```
+
+**Expected output:**
+
+```
+🔄 Initializing Kairo services...
+🚀 KAIRO API GATEWAY STARTED SUCCESSFULLY
+------------------------------------------------------------
+📡 URL      : http://localhost:3000
+🌐 Origins  : http://127.0.0.1:5500
+🛠️  ENV      : development
+------------------------------------------------------------
+```
+
+**Verify:**
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+```json
+{ "status": "active", "uptime": 3.2, "database": { "connected": true } }
+```
+
+## Terminal B: Python AI microservice
+
+<Tabs>
+  <Tab title="Linux / macOS">
+    ```bash
+    cd backend-python
+    python3 -m venv env
+    source env/bin/activate
+    pip install -r requirements.txt
+    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    cd backend-python
+    python -m venv env
+    env\Scripts\Activate.ps1
+    pip install -r requirements.txt
+    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  The virtual environment only needs to be created once (`python3 -m venv env`). On subsequent runs, skip that step and go straight to activating it.
+</Note>
+
+**Expected output:**
+
+```
+INFO:     Kairo AI Service v2.3.0  |  starting up
+INFO:     LLM model    : llama-3.3-70b-versatile
+INFO:     Embeddings   : ✓ all-MiniLM-L6-v2 (384d)
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+
+**Verify:**
+
+```bash
+curl http://localhost:8000/health
+```
+
+```json
+{ "status": "online", "service": "Kairo AI Engine", "version": "2.3.0" }
+```
+
+The interactive API docs are available at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+## Terminal C: Frontend
+
+The frontend is a static Multi-Page Application. The recommended approach is **VS Code Live Server**, which reloads the browser automatically on file changes.
+
+1. Open the repository root in VS Code.
+2. Install the [Live Server extension](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer) if you haven't already.
+3. Click **Go Live** in the VS Code status bar. The default port is `5500`.
+
+Alternatively, use the `serve` package:
+
+```bash
+npx serve -p 5500
+```
+
+<Warning>
+  The `FRONTEND_URL` in `backend-node/.env` must match the origin Live Server or `serve` uses. The default Live Server URL is `http://127.0.0.1:5500` — not `http://localhost:5500`. These are different origins from the CORS middleware's perspective.
+</Warning>
+
+## Verifying all three services
+
+With all three terminals running, open the frontend in your browser and check the browser's network tab — requests to `http://localhost:3000/api/` should return `200` responses, not CORS errors.
+
+You can also run both health checks at once:
+
+```bash
+curl http://localhost:3000/api/health && curl http://localhost:8000/health
+```
+
+## Common issues
+
+<AccordionGroup>
+  <Accordion title="CORS error in the browser console">
+    The browser is sending an `Origin` header that doesn't match `FRONTEND_URL` in `backend-node/.env`.
+
+    **Fix:** Check the exact URL your frontend is served from (including protocol and port), and set `FRONTEND_URL` to that value. Restart the Node.js server after changing `.env`.
+  </Accordion>
+
+  <Accordion title="Node.js server fails to start — database connection error">
+    The `pg` pool cannot connect to PostgreSQL. This usually means `DATABASE_URL`, `DB_HOST`, or `DB_PASSWORD` is wrong.
+
+    **Fix:** Copy the connection string directly from **Supabase → Settings → Database → Connection string → URI** and paste it as `DATABASE_URL`.
+  </Accordion>
+
+  <Accordion title="Python venv activation fails on Windows">
+    PowerShell's default execution policy blocks script activation.
+
+    **Fix:** Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once in an elevated PowerShell, then retry `env\Scripts\Activate.ps1`.
+  </Accordion>
+
+  <Accordion title="Python service starts but embeddings show as unavailable">
+    The `all-MiniLM-L6-v2` model failed to load. This typically happens if `sentence-transformers` isn't installed or there's a NumPy version conflict.
+
+    **Fix:** Make sure you installed dependencies inside the activated virtual environment (`pip install -r requirements.txt`). The `requirements.txt` pins `numpy==1.26.4` which is required for compatibility.
+  </Accordion>
+
+  <Accordion title="Port already in use">
+    Another process is using port `3000` or `8000`.
+
+    **Fix on Linux / macOS:**
+    ```bash
+    lsof -ti:3000 | xargs kill
+    lsof -ti:8000 | xargs kill
+    ```
+
+    **Fix on Windows:**
+    ```powershell
+    netstat -ano | findstr :3000
+    taskkill /PID <PID> /F
+    ```
+  </Accordion>
+
+  <Accordion title="OAuth callbacks fail locally">
+    GitHub and Google OAuth require the callback URL registered in the developer console to match exactly. Locally, the callback URL is `http://localhost:3000/api/auth/github/callback` (or `/google/callback`).
+
+    **Fix:** Add `http://localhost:3000/api/auth/github/callback` and `http://localhost:3000/api/auth/google/callback` as authorized callback URLs in your GitHub and Google OAuth app settings.
+  </Accordion>
+</AccordionGroup>

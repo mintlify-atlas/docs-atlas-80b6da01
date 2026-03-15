@@ -1,0 +1,114 @@
+---
+title: "Risk detection"
+description: "Proactive identification of at-risk students based on autonomy scores and Moodle performance."
+---
+
+Kairo automatically identifies Coders who may be falling behind by evaluating their soft skills scores against their Moodle academic performance. Risk flags alert you before a student fails so you can intervene early.
+
+<Warning>
+A **high** risk flag means the coder has both low autonomy (`autonomy <= 2`) and a below-average Moodle score (`average_score < 70`). This combination indicates a student who is struggling academically and lacks the self-direction to recover independently. Prioritize these coders for a direct conversation.
+</Warning>
+
+## The `risk_flags` table
+
+```sql
+CREATE TABLE risk_flags (
+  id           SERIAL PRIMARY KEY,
+  coder_id     INT NOT NULL,
+  risk_level   risk_level_enum NOT NULL,
+  reason       TEXT NOT NULL,
+  auto_detected BOOLEAN DEFAULT TRUE,
+  detected_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  resolved     BOOLEAN DEFAULT FALSE,
+  resolved_at  TIMESTAMP NULL,
+  FOREIGN KEY (coder_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+### Risk levels
+
+```sql
+CREATE TYPE risk_level_enum AS ENUM ('low', 'medium', 'high');
+```
+
+| Level | Meaning |
+|---|---|
+| `low` | No significant concern. Normal progress. |
+| `medium` | One warning indicator present. Monitor closely. |
+| `high` | Multiple warning indicators. Immediate attention required. |
+
+## Auto-detection logic
+
+The detection rules are encoded in the `v_coder_risk_analysis` view using a `CASE` expression that evaluates two signals:
+
+```sql
+CASE
+  WHEN ssa.autonomy <= 2 AND mp.average_score < 70 THEN 'high'::risk_level_enum
+  WHEN ssa.autonomy <= 2 OR  mp.average_score < 70 THEN 'medium'::risk_level_enum
+  ELSE                                                   'low'::risk_level_enum
+END AS calculated_risk_level
+```
+
+| Condition | Risk level |
+|---|---|
+| `autonomy <= 2` **AND** `average_score < 70` | `high` |
+| `autonomy <= 2` **OR** `average_score < 70` | `medium` |
+| Neither condition | `low` |
+
+The thresholds mean:
+
+- An `autonomy` score of `1` or `2` out of 5 signals that the coder struggles to work independently — they need external prompting to make progress.
+- An `average_score` below `70` indicates the coder is not meeting the minimum passing threshold in Moodle.
+
+## `auto_detected` vs manual flags
+
+The `auto_detected` boolean records whether a flag was created by the system or by you manually.
+
+| Value | Source |
+|---|---|
+| `TRUE` | Created automatically by the risk detection engine based on `v_coder_risk_analysis` |
+| `FALSE` | Created manually by a TL after a direct observation or conversation |
+
+Both flag types appear in the same `risk_flags` table and are treated identically in the dashboard view.
+
+## Viewing active flags
+
+Active (unresolved) flags are returned by:
+
+```http
+GET /api/tl/risk-flags
+```
+
+Flags are sorted by severity:
+
+```sql
+ORDER BY
+  CASE rf.risk_level
+    WHEN 'critical' THEN 1
+    WHEN 'high'     THEN 2
+    WHEN 'medium'   THEN 3
+    ELSE 4
+  END
+```
+
+A coder's unresolved flag also appears inline in the TL dashboard Coder table and in the detail panel as a red **⚠ En riesgo** badge.
+
+## Resolution workflow
+
+Once you have addressed the issue with a Coder — for example, after a 1:1 conversation or after their score improves — you can resolve the flag. Resolving sets `resolved = TRUE` and records `resolved_at`:
+
+```sql
+-- Columns on risk_flags
+resolved    BOOLEAN DEFAULT FALSE
+resolved_at TIMESTAMP NULL
+```
+
+Resolved flags are excluded from all dashboard queries (`WHERE rf.resolved = false`) and no longer count toward the **En riesgo** stat.
+
+<Info>
+Resolving a flag does not prevent a new one from being created if the underlying conditions persist. The auto-detection engine re-evaluates on each dashboard load.
+</Info>
+
+## Related views
+
+For the full SQL of the `v_coder_risk_analysis` view and a breakdown of all metrics it exposes, see [Coder analytics](/features/coder-analytics).

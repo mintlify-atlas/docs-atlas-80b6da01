@@ -1,0 +1,485 @@
+---
+title: 'Authentication'
+description: 'Register, verify, login, and manage user sessions on the Kairo platform.'
+---
+
+<Note>
+  Kairo uses **session-based authentication** — not JWT. All protected endpoints
+  rely on a server-side session. After a successful login or OTP verification the
+  session cookie `riwi.sid` is set automatically by the browser.
+</Note>
+
+<Warning>
+  All requests from a browser client **must include credentials**. Set
+  `credentials: 'include'` in `fetch` calls or `withCredentials: true` in Axios.
+  Without this the session cookie will not be sent and every protected request
+  will return `401`.
+</Warning>
+
+---
+
+## POST /api/auth/register
+
+Creates a new user account and sends a 6-digit OTP to the provided email address.
+The account is inactive until the OTP is verified.
+
+**Authentication:** Public
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  User email address. Must be unique across verified accounts.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Hashed server-side with bcrypt (12 rounds).
+</ParamField>
+
+<ParamField body="fullName" type="string" required>
+  Display name shown across the platform.
+</ParamField>
+
+<ParamField body="role" type="string" default="coder">
+  User role. Accepted values: `coder`, `tl`.
+</ParamField>
+
+<ParamField body="clanId" type="string">
+  Clan identifier. Can be set during onboarding instead.
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Confirmation that the OTP was sent.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The email address the OTP was sent to.
+</ResponseField>
+
+<ResponseField name="ttl" type="number">
+  OTP validity window in seconds (900 = 15 minutes).
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "ana@riwi.io",
+    "password": "S3cur3Pass!",
+    "fullName": "Ana Gómez",
+    "role": "coder"
+  }'
+```
+
+```json
+{
+  "message": "Verification code sent.",
+  "email": "ana@riwi.io",
+  "ttl": 900
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `409`  | Email already registered and verified. |
+| `500`  | Registration process failed (database or email error). |
+
+---
+
+## POST /api/auth/verify-otp
+
+Verifies the 6-digit OTP sent during registration. On success the user is
+logged in and a session cookie is issued.
+
+**Authentication:** Public
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  Email address that was registered.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  6-digit OTP received by email.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when verification succeeds.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">User ID.</ResponseField>
+    <ResponseField name="fullName" type="string">Display name.</ResponseField>
+    <ResponseField name="role" type="string">`coder` or `tl`.</ResponseField>
+    <ResponseField name="clanId" type="string">Clan identifier, may be null.</ResponseField>
+    <ResponseField name="firstLogin" type="boolean">`true` if onboarding is not yet complete.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/auth/verify-otp \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{"email": "ana@riwi.io", "code": "482910"}'
+```
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": 42,
+    "fullName": "Ana Gómez",
+    "role": "coder",
+    "clanId": null,
+    "firstLogin": true
+  }
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | Invalid or expired OTP code. |
+| `500`  | Verification or session initialisation failed. |
+
+---
+
+## POST /api/auth/resend-otp
+
+Invalidates any existing OTP and sends a fresh code to the given email.
+
+**Authentication:** Public
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  Email address of the unverified account.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+<ResponseField name="ttl" type="number">New OTP validity window in seconds.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/auth/resend-otp \
+  -H "Content-Type: application/json" \
+  -d '{"email": "ana@riwi.io"}'
+```
+
+```json
+{
+  "success": true,
+  "message": "A new verification code has been sent.",
+  "ttl": 900
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | Email not provided, or email already verified. |
+| `404`  | No account found for the given email. |
+| `500`  | Failed to send code. |
+
+---
+
+## POST /api/auth/login
+
+Authenticates an existing verified user with email and password. Creates a
+session and sets the `riwi.sid` cookie.
+
+**Authentication:** Public
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  Registered email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Account password.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on successful login.</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">User ID.</ResponseField>
+    <ResponseField name="fullName" type="string">Display name.</ResponseField>
+    <ResponseField name="role" type="string">`coder` or `tl`.</ResponseField>
+    <ResponseField name="clanId" type="string">Clan identifier.</ResponseField>
+    <ResponseField name="firstLogin" type="boolean">`true` if onboarding is pending.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/auth/login \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{"email": "ana@riwi.io", "password": "S3cur3Pass!"}'
+```
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": 42,
+    "fullName": "Ana Gómez",
+    "role": "coder",
+    "clanId": "turing",
+    "firstLogin": false
+  }
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `401`  | Invalid credentials, or account was created via OAuth (no password). |
+| `403`  | Email not yet verified. A new OTP is sent automatically. Response includes `requiresOtp: true` and `email`. |
+| `500`  | Server error during login. |
+
+---
+
+## GET /api/auth/check
+
+Checks whether the current request has a valid session. Safe to call on every
+page load to determine authentication state.
+
+**Authentication:** Public (returns `authenticated: false` when no session)
+
+### Response
+
+<ResponseField name="authenticated" type="boolean">
+  `true` when a valid session exists.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  Present only when `authenticated` is `true`.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">User ID.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="fullName" type="string">Display name.</ResponseField>
+    <ResponseField name="role" type="string">`coder` or `tl`.</ResponseField>
+    <ResponseField name="clanId" type="string">Clan identifier.</ResponseField>
+    <ResponseField name="firstLogin" type="boolean">Whether onboarding is pending.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/auth/check \
+  -b cookies.txt
+```
+
+```json
+{
+  "authenticated": true,
+  "user": {
+    "id": 42,
+    "email": "ana@riwi.io",
+    "fullName": "Ana Gómez",
+    "role": "coder",
+    "clanId": "turing",
+    "firstLogin": false
+  }
+}
+```
+
+---
+
+## GET /api/auth/me
+
+Returns the authenticated user's profile. Identical to `GET /api/auth/check`
+but requires an active session.
+
+**Authentication:** Required (session cookie)
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/auth/me \
+  -b cookies.txt
+```
+
+---
+
+## POST /api/auth/logout
+
+Destroys the server-side session and clears the `riwi.sid` cookie.
+
+**Authentication:** Required
+
+### Response
+
+<ResponseField name="message" type="string">`"Session closed."`</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/auth/logout \
+  -b cookies.txt
+```
+
+```json
+{ "message": "Session closed." }
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `500`  | Session could not be destroyed. |
+
+---
+
+## PATCH /api/auth/profile
+
+Updates the authenticated user's display name and/or clan assignment.
+At least one field must be provided.
+
+**Authentication:** Required
+
+### Request body
+
+<ParamField body="fullName" type="string">
+  New display name.
+</ParamField>
+
+<ParamField body="clanId" type="string">
+  New clan identifier.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">User ID.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="fullName" type="string">Updated display name.</ResponseField>
+    <ResponseField name="role" type="string">User role.</ResponseField>
+    <ResponseField name="clanId" type="string">Updated clan identifier.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -X PATCH https://api.kairo.app/api/auth/profile \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"fullName": "Ana M. Gómez"}'
+```
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": 42,
+    "email": "ana@riwi.io",
+    "fullName": "Ana M. Gómez",
+    "role": "coder",
+    "clanId": "turing"
+  }
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | No fields provided. |
+| `401`  | No active session. |
+| `500`  | Database update failed. |
+
+---
+
+## PATCH /api/auth/complete-onboarding
+
+Marks onboarding as complete (`first_login = false`) and optionally assigns
+the coder to a clan. Only available to users with the `coder` role.
+
+**Authentication:** Required — `coder` role
+
+### Request body
+
+<ParamField body="clanId" type="string">
+  Clan to assign the coder to. Optional if a clan was set during registration.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">`"Onboarding completed."`</ResponseField>
+
+### Example
+
+```bash
+curl -X PATCH https://api.kairo.app/api/auth/complete-onboarding \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"clanId": "turing"}'
+```
+
+```json
+{ "success": true, "message": "Onboarding completed." }
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `401`  | No active session. |
+| `403`  | Authenticated user does not have the `coder` role. |
+| `500`  | Database update failed. |
+
+---
+
+## GET /api/auth/google
+
+Initiates the Google OAuth 2.0 flow. Redirects the browser to Google's
+authorisation page. On success, the user is redirected to the dashboard
+or onboarding page.
+
+**Authentication:** Public
+
+<Note>
+  This endpoint must be opened in the browser — it cannot be called with
+  `curl` or `fetch`. The OAuth callback sets the session cookie automatically.
+</Note>
+
+---
+
+## GET /api/auth/github
+
+Initiates the GitHub OAuth flow. Redirects to GitHub for authorisation.
+
+**Authentication:** Public
+
+<Note>
+  Same as the Google flow — must be opened in the browser directly.
+</Note>

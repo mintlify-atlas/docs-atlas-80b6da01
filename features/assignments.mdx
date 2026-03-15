@@ -1,0 +1,102 @@
+---
+title: "Assignments & evidence"
+description: "Submitting activity evidence and tracking your assignment progress across learning plan activities."
+---
+
+The **Actividades** screen lets you view all activities assigned to your clan, filter by status, and submit evidence for completed work. Your TL can see every submission and leave feedback directly.
+
+## Viewing your activities
+
+Navigate to **Actividades** from the sidebar or bottom navigation. Activities load from the assignments your TL has published for your clan. You can filter the list:
+
+- **Todas** — all activities regardless of status
+- **Pendientes** — activities not yet submitted
+- **Vencidas** — activities past their due date
+
+Activities published by TLs come in two formats:
+
+- **PDF** — a document assignment you download, complete, and submit evidence for
+- **Repositorio** — a GitHub repository link
+
+## Submitting evidence
+
+For each activity in your learning plan, you can submit evidence of completion. Evidence is stored in the `evidence_submissions` table:
+
+```sql
+CREATE TABLE evidence_submissions (
+  id           SERIAL PRIMARY KEY,
+  activity_id  INT NOT NULL,
+  coder_id     INT NOT NULL,
+  file_url     TEXT,
+  link_url     TEXT,
+  description  TEXT,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (activity_id) REFERENCES plan_activities(id) ON DELETE CASCADE,
+  FOREIGN KEY (coder_id)    REFERENCES users(id)           ON DELETE CASCADE
+);
+```
+
+You can submit:
+
+- **A file upload** — handled by `multer` with in-memory storage. Accepted format is PDF, maximum 20 MB. The file is uploaded to the `activity-resources` Supabase Storage bucket and a signed URL is stored in `file_url`.
+- **A link URL** — a GitHub repository URL, deployed project link, or any external URL stored in `link_url`.
+- **A description** — free-text context for what you completed, stored in `description`.
+
+<Note>
+You can submit both a file and a link for the same activity. At least one of `file_url` or `link_url` must be present.
+</Note>
+
+## Activity progress tracking
+
+Kairo tracks completion at the individual activity level using the `activity_progress` table:
+
+```sql
+CREATE TABLE activity_progress (
+  id                   SERIAL PRIMARY KEY,
+  activity_id          INT NOT NULL,
+  coder_id             INT NOT NULL,
+  completed            BOOLEAN DEFAULT FALSE,
+  reflection_text      TEXT,
+  time_spent_minutes   INT,
+  completed_at         TIMESTAMP NULL,
+  UNIQUE (activity_id, coder_id),
+  FOREIGN KEY (activity_id) REFERENCES plan_activities(id) ON DELETE CASCADE,
+  FOREIGN KEY (coder_id)    REFERENCES users(id)           ON DELETE CASCADE
+);
+```
+
+When you complete a full plan day via `POST /api/coder/plan/:planId/day/:day/complete`, Kairo automatically writes a `completed = TRUE` row for every `plan_activities` row in that day. You can also mark individual activities:
+
+```http
+PATCH /api/coder/activities/:id/complete
+```
+
+**Request body:**
+
+```json
+{
+  "reflectionText": "I struggled with LEFT JOINs but the example helped.",
+  "timeSpent": 45
+}
+```
+
+The `UNIQUE (activity_id, coder_id)` constraint ensures each activity has at most one progress record per coder. Resubmitting updates the existing row via `ON CONFLICT DO UPDATE`.
+
+## How TL reviews your evidence
+
+Your TL sees all exercise submissions from your clan in the **Ejercicios enviados por el clan** section of their dashboard. For each submission they can:
+
+1. View your code in the review modal
+2. Read the expected output
+3. Write feedback in the text area
+4. Click **Enviar feedback** — this calls `POST /api/tl/submissions/:id/review`
+
+When the TL submits feedback:
+
+- A real-time notification is pushed to you via the notification service
+- You earn bonus Kairo Score points (`tl_approved` score event)
+- The submission is marked as reviewed with a timestamp in `reviewed_at`
+
+<Tip>
+Include a brief description when you submit evidence. It helps your TL understand your approach before reading the code, leading to more useful feedback.
+</Tip>

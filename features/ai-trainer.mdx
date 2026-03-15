@@ -1,0 +1,131 @@
+---
+title: "AI trainer"
+description: "On-demand AI exercises, focus cards, chat assistant, and semantic resource search powered by Kairo's AI layer."
+---
+
+The AI Trainer is your interactive learning companion inside Kairo. It surfaces your active learning plan, generates practice exercises on demand, provides a conversational tutor, and searches your TL's uploaded study resources using semantic similarity.
+
+## Overview
+
+<CardGroup cols={2}>
+  <Card title="Learning plan viewer" icon="calendar-days">
+    Navigate your active 4-week plan day by day. Mark activities complete and track your overall progress across 20 days.
+  </Card>
+  <Card title="Focus cards" icon="cards-blank">
+    Generate 6 prioritized study cards (2 high / 2 medium / 2 low) based on your module topics and struggling areas.
+  </Card>
+  <Card title="Practice exercises" icon="terminal">
+    Request an AI-generated coding exercise for the current day's topic. Write your solution in an embedded editor and submit it to your TL for review.
+  </Card>
+  <Card title="Chat assistant" icon="message-bot">
+    Ask Kairo any programming question. Receive concise, practical answers from a Llama 3.3 70B model tuned for the Riwi bootcamp curriculum.
+  </Card>
+</CardGroup>
+
+## Plan states
+
+The AI Trainer shows one of three states depending on your plan status:
+
+- **No plan** — You haven't generated a plan yet. Click **Generar mi plan personalizado** to trigger `POST /api/coder/plan/request`.
+- **Generating** — The Python service is processing your plan. A progress bar polls until the plan is ready.
+- **Active plan** — Your 20-day plan is displayed with a week navigator, day dots, and activity cards.
+
+## Focus cards
+
+Focus cards are concise study flashcards generated on demand for your current module. Each card contains a theory explanation adapted to your `learning_style`, a 20-minute practice task, and two pro tips.
+
+**Endpoint:** `POST /generate-focus-cards` (Python microservice)
+
+```json
+{
+  "coder_id": 42,
+  "module_id": 4,
+  "struggling_topics": ["JOINs", "subqueries"]
+}
+```
+
+Kairo always returns exactly **6 cards** in this distribution:
+
+| Priority | Count | Topics targeted |
+|---|---|---|
+| `high` | 2 | Your `struggling_topics` or the module's hardest topics |
+| `medium` | 2 | Related concepts from the module |
+| `low` | 2 | Broader enrichment and good-practice topics |
+
+The AI personalizes the theory text based on your `learning_style` and adjusts the difficulty of the practice task using your `problem_solving` and `autonomy` scores.
+
+## Practice exercises
+
+On each day of your active plan, you can open the **Ejercicio del día** modal. Kairo generates a coding exercise based on the day's technical activity topic.
+
+**Endpoint:** `POST /api/coder/exercise/generate`
+
+The exercise modal includes:
+
+- A problem description with expected output
+- An embedded Monaco editor for writing your solution
+- Collapsible hints (revealed one at a time)
+- A reference solution you can unlock
+
+Once you are happy with your solution, click **Enviar solución** to submit:
+
+```http
+POST /api/coder/exercise/:exerciseId/submit
+```
+
+Your TL can review submitted solutions from their dashboard and leave feedback. When they do, you earn bonus Kairo Score points.
+
+<Note>
+Submitted code is visible to your TL. Write clean, readable code — feedback quality is higher when the TL can follow your reasoning.
+</Note>
+
+## Chat assistant
+
+The chat widget lets you ask any programming question and receive a focused, practical answer.
+
+**Endpoint:** `POST /chat/ask` (Python microservice)
+
+```json
+{
+  "message": "What is the difference between INNER JOIN and LEFT JOIN?",
+  "coder_id": 42
+}
+```
+
+The model (`llama-3.3-70b-versatile` via Groq) is instructed to:
+
+- Give a short answer first, then expand if needed
+- Keep responses to a maximum of 3 paragraphs
+- Use simple, encouraging language appropriate for bootcamp students
+
+```json
+{
+  "reply": "An INNER JOIN returns only rows that have matching values in both tables..."
+}
+```
+
+## Semantic resource search
+
+When you are viewing a day's activities, Kairo automatically searches for TL-uploaded study resources relevant to the topic using embedding-based similarity.
+
+**Endpoint:** `POST /api/coder/resources/search`
+
+```json
+{
+  "topic": "PostgreSQL JOINs",
+  "moduleId": 4,
+  "limit": 3
+}
+```
+
+The search follows a three-tier strategy:
+
+1. **Semantic search (primary)** — Calls the Python RAG service at `/search-resources`, which computes vector embeddings and returns the most similar documents from your clan's resource library.
+2. **Full-text fallback** — If the Python service is unavailable, falls back to a PostgreSQL `LIKE` search on `resources.title` and `resources.preview_text`.
+3. **Module fallback** — If neither returns results, returns the most recently uploaded resource for your current module.
+
+Matching resources appear in the **Recursos del TL para este tema** section below the activity cards. Each result includes a signed download URL valid for 1 hour.
+
+<Tip>
+Resources are scoped to your clan. You only see documents uploaded by your own TL, ensuring relevance to your specific curriculum.
+</Tip>

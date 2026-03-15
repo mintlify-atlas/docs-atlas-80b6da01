@@ -1,0 +1,118 @@
+---
+title: "TL feedback"
+description: "How Team Leaders send feedback to Coders, and how Coders receive and acknowledge it."
+---
+
+Feedback is the primary communication channel between Team Leaders and Coders inside Kairo. TLs send typed messages categorized by type, and Coders receive real-time notifications in their notification bell.
+
+## The `tl_feedback` table
+
+```sql
+CREATE TABLE tl_feedback (
+  id            SERIAL PRIMARY KEY,
+  coder_id      INT NOT NULL,
+  tl_id         INT NOT NULL,
+  plan_id       INT,
+  feedback_text TEXT NOT NULL,
+  feedback_type feedback_type_enum,
+  is_read       BOOLEAN DEFAULT FALSE,
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (coder_id) REFERENCES users(id)              ON DELETE CASCADE,
+  FOREIGN KEY (tl_id)    REFERENCES users(id)              ON DELETE CASCADE,
+  FOREIGN KEY (plan_id)  REFERENCES complementary_plans(id) ON DELETE SET NULL
+);
+```
+
+The optional `plan_id` lets you link feedback to a specific learning plan, giving context to the Coder about which work you are commenting on.
+
+## Feedback types
+
+```sql
+CREATE TYPE feedback_type_enum AS ENUM (
+  'weekly',
+  'activity',
+  'general'
+);
+```
+
+| Type | When to use |
+|---|---|
+| `weekly` | End-of-week progress summary for the Coder |
+| `activity` | Comments on a specific activity or exercise submission |
+| `general` | General notes, encouragement, or warnings not tied to a specific week or activity |
+
+## Sending feedback as a TL
+
+<Steps>
+  <Step title="Open the coder detail panel">
+    On the TL dashboard, click any Coder row in the table. The detail panel opens on the right with the coder's name, scores, and skill bars.
+  </Step>
+  <Step title="Select a feedback type">
+    Use the **Tipo de feedback** dropdown to choose `weekly`, `activity`, or `general`.
+  </Step>
+  <Step title="Write your message">
+    Type your feedback in the text area. Be specific — mention what the Coder did well and what to improve.
+  </Step>
+  <Step title="Send the feedback">
+    Click **Enviar**. This calls `POST /api/tl/feedback` with the body:
+
+    ```json
+    {
+      "coderId": 42,
+      "feedbackText": "Great progress on JOINs this week. Focus on subqueries next.",
+      "feedbackType": "weekly"
+    }
+    ```
+
+    Kairo inserts a row into `tl_feedback` with `is_read = FALSE`.
+  </Step>
+  <Step title="Coder receives a real-time notification">
+    The notification service immediately pushes an alert to the Coder with a preview of your message. The Coder's notification bell shows a red dot.
+  </Step>
+</Steps>
+
+## The notification system
+
+The `is_read` column drives the notification bell on the Coder's dashboard:
+
+```sql
+-- false = red dot on the notification bell
+is_read BOOLEAN DEFAULT FALSE
+```
+
+When a new `tl_feedback` row is inserted with `is_read = FALSE`, the Coder sees:
+
+- A red dot (`notif-dot`) on the bell icon in the topbar
+- The message listed in the notification dropdown with the TL's name and timestamp
+- A preview of the message in the **Últimos comentarios de tu TL** card on the dashboard
+
+## Marking feedback as read
+
+When a Coder opens or acknowledges a feedback message, the client calls:
+
+```http
+PATCH /api/coder/feedback/:id/read
+```
+
+This sets `is_read = TRUE` on the `tl_feedback` row and notifies the TL in real time that the feedback was read:
+
+```javascript
+// From markFeedbackRead in coderControllers.js
+await notifyUser(
+  feedback.tl_id,
+  'Feedback Leído',
+  `${coderName} ha leído tu feedback: "${feedback.feedback_text.substring(0, 40)}..."`,
+  'feedback_read',
+  feedback.id
+);
+```
+
+The TL receives a notification confirming which Coder acknowledged the message.
+
+<Tip>
+Use `weekly` feedback every Friday to give each Coder a short, structured summary. Consistent weekly feedback improves plan quality because Coders are more motivated to complete activities when they know you are watching.
+</Tip>
+
+## Feedback on exercise submissions
+
+Feedback on specific code submissions works through a separate flow. When you review a submission from the **Ejercicios enviados por el clan** section, your feedback is stored in `exercise_submissions.tl_feedback_text` rather than in `tl_feedback`. See [Assignments & evidence](/features/assignments) for that workflow.

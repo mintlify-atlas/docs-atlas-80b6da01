@@ -1,0 +1,191 @@
+---
+title: "Custom ENUM types"
+description: "PostgreSQL ENUM types used across the Kairo schema"
+---
+
+Kairo defines 8 custom ENUM types to enforce valid values at the database level. Using ENUMs instead of plain strings means invalid values are rejected by PostgreSQL before they reach application code.
+
+<Note>
+  All ENUMs are defined in `schema.sql` and must exist before the tables that reference them are created. If you need to add a new value to an ENUM, use `ALTER TYPE ... ADD VALUE`.
+</Note>
+
+## ENUM reference
+
+### `role_enum`
+
+Defines the two user roles in the platform.
+
+```sql
+CREATE TYPE role_enum AS ENUM ('coder', 'tl');
+```
+
+| Value | Meaning |
+|---|---|
+| `coder` | A student enrolled in the bootcamp |
+| `tl` | A Team Leader who manages and monitors coders |
+
+**Used in:** `users.role`
+
+---
+
+### `learning_style_enum`
+
+Represents a coder's preferred learning modality, determined during the onboarding assessment.
+
+```sql
+CREATE TYPE learning_style_enum AS ENUM ('visual', 'auditory', 'kinesthetic', 'mixed');
+```
+
+| Value | Meaning |
+|---|---|
+| `visual` | Learns best through diagrams, charts, and written material |
+| `auditory` | Learns best through listening and verbal explanations |
+| `kinesthetic` | Learns best through hands-on practice and doing |
+| `mixed` | Combination of multiple styles |
+
+**Used in:** `soft_skills_assessment.learning_style`
+
+---
+
+### `activity_type_enum`
+
+Describes how much guidance a plan activity provides to the coder.
+
+```sql
+CREATE TYPE activity_type_enum AS ENUM ('guided', 'semi_guided', 'autonomous');
+```
+
+| Value | Meaning |
+|---|---|
+| `guided` | Step-by-step instructions provided; suitable for low-autonomy coders |
+| `semi_guided` | Partial instructions; coder makes some decisions independently |
+| `autonomous` | Open-ended task; coder determines approach and execution |
+
+**Used in:** `plan_activities.activity_type`
+
+<Tip>
+  The AI learning plan agent selects `activity_type` based on the coder's `autonomy` score. Low autonomy scores result in more `guided` activities.
+</Tip>
+
+---
+
+### `feedback_type_enum`
+
+Categorizes the nature of a TL's feedback message.
+
+```sql
+CREATE TYPE feedback_type_enum AS ENUM ('weekly', 'activity', 'general');
+```
+
+| Value | Meaning |
+|---|---|
+| `weekly` | Periodic weekly check-in feedback |
+| `activity` | Feedback tied to a specific plan activity |
+| `general` | Freeform message not tied to a specific event |
+
+**Used in:** `tl_feedback.feedback_type`
+
+---
+
+### `risk_level_enum`
+
+Represents the severity of a risk alert. Used in both the `risk_flags` table (stored alerts) and the `v_coder_risk_analysis` view (calculated risk).
+
+```sql
+CREATE TYPE risk_level_enum AS ENUM ('low', 'medium', 'high');
+```
+
+| Value | Meaning |
+|---|---|
+| `low` | No significant risk indicators |
+| `medium` | One risk indicator present (low autonomy OR low score) |
+| `high` | Multiple risk indicators present (low autonomy AND low score) |
+
+**Used in:** `risk_flags.risk_level`, `ai_reports.risk_level`, `v_coder_risk_analysis.current_risk_level`, `v_coder_risk_analysis.calculated_risk_level`
+
+---
+
+### `report_target_enum`
+
+Defines what scope an AI-generated report covers.
+
+```sql
+CREATE TYPE report_target_enum AS ENUM ('coder', 'clan', 'cohort');
+```
+
+| Value | Meaning |
+|---|---|
+| `coder` | Report covers a single coder (`target_id` = user ID) |
+| `clan` | Report covers a clan group (`target_id` = clan identifier) |
+| `cohort` | Report covers an entire cohort (`target_id` = cohort identifier) |
+
+**Used in:** `ai_reports.target_type`
+
+---
+
+### `ai_agent_enum`
+
+Identifies which AI agent produced a logged generation.
+
+```sql
+CREATE TYPE ai_agent_enum AS ENUM ('learning_plan', 'report_generator', 'risk_detector');
+```
+
+| Value | Meaning |
+|---|---|
+| `learning_plan` | Agent that generates personalized 6-card learning plans |
+| `report_generator` | Agent that produces executive reports for TLs |
+| `risk_detector` | Agent that evaluates coders for at-risk classification |
+
+**Used in:** `ai_generation_log.agent_type`
+
+---
+
+### `priority_level_enum`
+
+Controls the display order of the 6 Cards on the coder dashboard.
+
+```sql
+CREATE TYPE priority_level_enum AS ENUM ('low', 'medium', 'high');
+```
+
+| Value | Meaning |
+|---|---|
+| `low` | Supplementary card — shown last (2 of 6) |
+| `medium` | Standard card — shown in the middle (2 of 6) |
+| `high` | Priority card — shown first (2 of 6) |
+
+**Used in:** `complementary_plans.priority_level`
+
+---
+
+## Using ENUMs in queries
+
+PostgreSQL enforces ENUM values on write, so you don't need application-level validation for these fields.
+
+```sql
+-- Filter coders by role
+SELECT id, full_name FROM users
+WHERE role = 'coder';
+
+-- Get all high-priority active plans for a coder
+SELECT * FROM complementary_plans
+WHERE coder_id = 42
+  AND is_active = TRUE
+  AND priority_level = 'high';
+
+-- Fetch unresolved high-risk flags
+SELECT coder_id, reason, detected_at
+FROM risk_flags
+WHERE risk_level = 'high'
+  AND resolved = FALSE;
+
+-- Count AI calls by agent type
+SELECT agent_type, COUNT(*) AS total_calls
+FROM ai_generation_log
+GROUP BY agent_type;
+```
+
+<Note>
+  When casting ENUM values explicitly in SQL (e.g. inside views), use the `::type_name` syntax: `'high'::risk_level_enum`.
+</Note>

@@ -1,0 +1,140 @@
+---
+title: "Migrations"
+description: "How to apply schema changes and run seeds"
+---
+
+<Warning>
+  Always back up your database before running any migrations on a production environment. Migrations that use `ALTER TABLE` or `DROP` cannot be automatically reversed.
+</Warning>
+
+## Fresh setup
+
+For a new environment (local development or a new Supabase project), apply the files in this order:
+
+**Step 1 — Create all tables, ENUMs, and views**
+
+```bash
+psql -U your_user -d your_db -f schema.sql
+```
+
+In Supabase, open the **SQL Editor**, paste the contents of `schema.sql`, and execute.
+
+**Step 2 — Enable Row Level Security**
+
+```bash
+psql -U your_user -d your_db -f rls_policies.sql
+```
+
+**Step 3 — Apply incremental migrations**
+
+```bash
+psql -U your_user -d your_db -f migrations/001_add_clans_and_priority_and_notifications.sql
+psql -U your_user -d your_db -f migrations/002_add_raw_answers_to_soft_skills.sql
+psql -U your_user -d your_db -f migrations/005_create_user_profiles.sql
+```
+
+<Note>
+  Migrations 001 and 002 add columns that are already present in the current `schema.sql` (v3.0). If you are applying `schema.sql` fresh, those migrations are safe to run — all `ALTER TABLE` statements use `ADD COLUMN IF NOT EXISTS` and will be no-ops.
+</Note>
+
+---
+
+## Migration files
+
+All migration files live in `database/migrations/`. Apply them in numerical order.
+
+| File | Purpose |
+|---|---|
+| `001_add_clans_and_priority_and_notifications.sql` | Adds `clan_id` to `users`, `priority_level` to `complementary_plans`, and `is_read` to `tl_feedback`. Enables the 6-Card system and clan filtering. |
+| `002_add_raw_answers_to_soft_skills.sql` | Adds the `raw_answers JSONB` column to `soft_skills_assessment`. Required by the `softSkills.js` model to avoid INSERT failures. |
+| `005_create_user_profiles.sql` | Creates the `user_profiles` table with personal/social profile fields (phone, bio, GitHub, LinkedIn, portfolio, etc.). |
+
+### Applying a single migration
+
+```bash
+# Apply one migration file
+psql -U your_user -d your_db -f migrations/001_add_clans_and_priority_and_notifications.sql
+```
+
+In Supabase SQL Editor:
+1. Open the file locally and copy its contents.
+2. Paste into the SQL Editor.
+3. Click **Run**.
+
+---
+
+## Seed data
+
+The `database/seeds/` directory contains SQL scripts that populate the database with test data for development and QA.
+
+| File | Contents |
+|---|---|
+| `seeds/users.sql` | 8 users (2 TLs + 6 coders across 3 clans), soft-skills assessments, 6 bootcamp modules, topics, Moodle progress records, and struggling-topic assignments |
+
+### Running seeds
+
+```bash
+psql -U your_user -d your_db -f seeds/users.sql
+```
+
+In Supabase:
+1. Open `seeds/users.sql`.
+2. Paste into the SQL Editor and run.
+
+After running, you can verify the inserts:
+
+```sql
+SELECT COUNT(*) FROM users;                   -- expect 8
+SELECT COUNT(*) FROM modules;                 -- expect 6
+SELECT COUNT(*) FROM soft_skills_assessment;  -- expect 6
+```
+
+### What seeds create
+
+| Data | Details |
+|---|---|
+| Team Leaders | María García, Carlos Rodríguez |
+| Coders — Clan Turing | Juan Pérez (at risk: autonomy 2), Ana López (balanced) |
+| Coders — Clan Tesla | Pedro Martínez (low time management), Sofía Hernández (excellent) |
+| Coders — Clan McCarthy | Luis González (high risk: autonomy 2, score 58), María Sánchez (balanced) |
+| Modules | Python, HTML/CSS, JavaScript, Databases, Node.js, React |
+
+<Tip>
+  Seeds are designed to produce coders in different risk states — useful for testing the `v_coder_risk_analysis` view and the risk detection agent end-to-end.
+</Tip>
+
+### Resetting seed data
+
+To start fresh, truncate from the bottom of the dependency chain upward:
+
+```sql
+-- Single command: truncating users cascades to all dependent tables
+TRUNCATE TABLE users RESTART IDENTITY CASCADE;
+
+-- Then re-run the seed
+-- psql -U your_user -d your_db -f seeds/users.sql
+```
+
+<Warning>
+  `TRUNCATE ... CASCADE` deletes all rows in every table that has a foreign key referencing `users`. Do not run this on a production database.
+</Warning>
+
+---
+
+## Writing new migrations
+
+When you need to change the schema:
+
+1. Create a new file in `database/migrations/` following the naming pattern `NNN_short_description.sql` (increment `NNN` from the last file).
+2. Use `IF NOT EXISTS` / `IF EXISTS` guards so migrations are safe to re-run.
+3. Add a `COMMENT ON` statement describing the change.
+4. Test against a staging environment before applying to production.
+
+```sql
+-- Example: adding a new column safely
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+COMMENT ON COLUMN users.avatar_url
+  IS 'URL to the user profile picture stored in Supabase Storage';
+```

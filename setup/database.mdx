@@ -1,0 +1,125 @@
+---
+title: "Database setup"
+description: "Create your Supabase project, apply the schema, and run the migrations."
+---
+
+## Create a Supabase project
+
+<Steps>
+  <Step title="Sign up and create a project">
+    Go to [supabase.com](https://supabase.com) and create a new project. Choose a region close to your users and set a strong database password — you'll need it for `DB_PASSWORD` in `backend-node/.env`.
+  </Step>
+
+  <Step title="Collect your credentials">
+    In your Supabase project, navigate to **Settings → Database** and **Settings → API** to collect:
+
+    | Variable | Where to find it |
+    |---|---|
+    | `DB_HOST` | Settings → Database → Connection info → Host |
+    | `DB_USER` | Settings → Database → Connection info → User |
+    | `DB_PASSWORD` | The password you set when creating the project |
+    | `DATABASE_URL` | Settings → Database → Connection string → URI |
+    | `SUPABASE_URL` | Settings → API → Project URL |
+    | `SUPABASE_ANON_KEY` | Settings → API → Project API keys → `anon public` |
+    | `SUPABASE_SERVICE_KEY` | Settings → API → Project API keys → `service_role` |
+  </Step>
+
+  <Step title="Open the SQL editor">
+    In your Supabase dashboard, click **SQL Editor** in the left sidebar. You'll run all schema and migration files here.
+  </Step>
+</Steps>
+
+## Apply the schema
+
+<Steps>
+  <Step title="Run schema.sql">
+    Open `database/schema.sql` from the repository, paste the entire contents into the SQL editor, and click **Run**.
+
+    This creates all ENUM types, tables, indexes, and views in the correct dependency order.
+
+    <Warning>
+      `schema.sql` uses `CREATE TYPE` and `CREATE TABLE` statements without `IF NOT EXISTS` guards. Run it only once on a fresh database. If you need to reset, uncomment the `DROP` block at the top of the file first.
+    </Warning>
+  </Step>
+
+  <Step title="Run the migrations">
+    Apply each migration file in numerical order:
+
+    ```
+    001_add_clans_and_priority_and_notifications.sql
+    002_add_raw_answers_to_soft_skills.sql
+    005_create_user_profiles.sql
+    ```
+
+    Paste each file into the SQL editor and run them one at a time. All migration statements use `IF NOT EXISTS` or `ADD COLUMN IF NOT EXISTS`, so they are safe to re-run.
+  </Step>
+</Steps>
+
+## ENUM types
+
+The schema defines eight custom ENUM types that enforce data integrity at the database level:
+
+| Type | Values | Used in |
+|---|---|---|
+| `role_enum` | `coder`, `tl` | `users.role` |
+| `learning_style_enum` | `visual`, `auditory`, `kinesthetic`, `mixed` | `soft_skills_assessment.learning_style` |
+| `activity_type_enum` | `guided`, `semi_guided`, `autonomous` | `plan_activities.activity_type` |
+| `feedback_type_enum` | `weekly`, `activity`, `general` | `tl_feedback.feedback_type` |
+| `risk_level_enum` | `low`, `medium`, `high` | `risk_flags.risk_level`, `ai_reports.risk_level` |
+| `report_target_enum` | `coder`, `clan`, `cohort` | `ai_reports.target_type` |
+| `ai_agent_enum` | `learning_plan`, `report_generator`, `risk_detector` | `ai_generation_log.agent_type` |
+| `priority_level_enum` | `low`, `medium`, `high` | `complementary_plans.priority_level` |
+
+## Tables
+
+The schema creates 14 tables plus 2 views:
+
+| Table | Purpose |
+|---|---|
+| `users` | All platform users (coders and TLs) with `role_enum` and optional `clan_id` |
+| `soft_skills_assessment` | One-time onboarding assessment per coder (scores 1–5 per skill + learning style) |
+| `modules` | Bootcamp academic modules (Backend, Frontend, etc.) |
+| `moodle_progress` | Per-coder Moodle academic progress, average score, and struggling topics |
+| `topics` | Specific topics within each module |
+| `coder_struggling_topics` | N:M relationship tracking which topics each coder struggles with |
+| `complementary_plans` | AI-generated personalized 4-week plans stored as JSONB, with priority level |
+| `plan_activities` | Daily activities within each plan (estimated time, type, skill focus) |
+| `activity_progress` | Tracks which activities each coder has completed and any reflection notes |
+| `evidence_submissions` | Files and links submitted by coders as activity evidence |
+| `tl_feedback` | Feedback messages sent by TLs to coders; `is_read = false` triggers the notification bell |
+| `risk_flags` | Auto-detected or manually set risk alerts per coder |
+| `ai_reports` | AI-generated executive reports for TLs (per coder, clan, or cohort) |
+| `ai_generation_log` | Full audit log of every LLM call (input payload, output payload, execution time) |
+| `user_profiles` | Extended profile data (phone, bio, social links) for both coders and TLs |
+
+### Views
+
+| View | Purpose |
+|---|---|
+| `v_coder_dashboard` | Aggregated progress summary per coder (completion %, current week, score) |
+| `v_coder_risk_analysis` | Calculated risk level per coder based on autonomy score and Moodle average |
+
+## Row-Level Security (RLS)
+
+Supabase enables RLS by default on all new tables. The general policy pattern used in Kairo is:
+
+- **Coders** can read and write only their own rows (filtered by `coder_id = auth.uid()` or equivalent).
+- **TLs** can read rows for all coders within their clan.
+- The Python microservice uses the `service_role` key, which bypasses RLS entirely for AI generation tasks.
+
+<Note>
+  RLS policy SQL is maintained in the Supabase dashboard under **Authentication → Policies**. If you're setting up a fresh project, create policies manually for each table after applying the schema.
+</Note>
+
+## Verify the setup
+
+After running the schema and migrations, run this query in the SQL editor to confirm all tables exist:
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;
+```
+
+You should see 15 tables (14 data tables + `session`, which is auto-created by `connect-pg-simple` when you first start the Node.js server).

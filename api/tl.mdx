@@ -1,0 +1,391 @@
+---
+title: 'Team Leader endpoints'
+description: 'Endpoints available exclusively to authenticated Team Leaders.'
+---
+
+<Note>
+  All routes under `/api/tl/` require an active session cookie and the `tl`
+  role. Requests from coders or unauthenticated users receive `401` or `403`.
+</Note>
+
+---
+
+## GET /api/tl/dashboard
+
+Returns the TL's full dashboard data: their own profile, all coders in their
+clan with progress and soft-skills data, clan overview metrics, and clan-wide
+soft-skills averages.
+
+### Response
+
+<ResponseField name="tl" type="object">
+  <Expandable title="properties">
+    <ResponseField name="fullName" type="string">TL display name.</ResponseField>
+    <ResponseField name="clanId" type="string">TL's clan identifier.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="coders" type="object[]">
+  All coders in the clan. Each item includes `id`, `full_name`, `email`,
+  `first_login`, `clan_id`, `kairo_score`, `average_score`, `current_week`,
+  soft-skill scores, `learning_style`, and `risk_level`.
+</ResponseField>
+
+<ResponseField name="overview" type="object">
+  <Expandable title="properties">
+    <ResponseField name="totalCoders" type="number">Total coders in the clan.</ResponseField>
+    <ResponseField name="completedOnboarding" type="number">Coders who finished onboarding.</ResponseField>
+    <ResponseField name="pendingOnboarding" type="number">Coders with pending onboarding.</ResponseField>
+    <ResponseField name="highRiskCoders" type="number">Coders with `high` or `critical` risk flags.</ResponseField>
+    <ResponseField name="clanAvgScore" type="number">Mean Kairo Score for the clan.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="softSkillsAverage" type="object">
+  Clan averages (1–5) for `autonomy`, `time_management`, `problem_solving`,
+  `communication`, and `teamwork`.
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/tl/dashboard \
+  -b cookies.txt
+```
+
+---
+
+## POST /api/tl/feedback
+
+Sends a feedback message to a coder. Inserts a row into `tl_feedback` and
+dispatches a real-time notification to the coder via SSE.
+
+### Request body
+
+<ParamField body="coderId" type="number" required>
+  ID of the coder receiving the feedback.
+</ParamField>
+
+<ParamField body="feedbackText" type="string" required>
+  Feedback message body.
+</ParamField>
+
+<ParamField body="feedbackType" type="string" required>
+  Category label for the feedback (e.g. `"motivational"`, `"technical"`, `"behavioral"`).
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">`"Feedback registered"`</ResponseField>
+<ResponseField name="data" type="object">The newly created `tl_feedback` row.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/tl/feedback \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "coderId": 42,
+    "feedbackText": "Great improvement this week on SQL queries.",
+    "feedbackType": "technical"
+  }'
+```
+
+```json
+{
+  "success": true,
+  "message": "Feedback registered",
+  "data": { "id": 88, "coder_id": 42, "tl_id": 7, "feedback_type": "technical" }
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | One or more required fields are missing. |
+
+---
+
+## GET /api/tl/submissions
+
+Returns up to 50 recent exercise submissions from coders in the TL's clan,
+joined with exercise and coder details.
+
+### Response
+
+<ResponseField name="submissions" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="number">Submission ID.</ResponseField>
+    <ResponseField name="code_submitted" type="string">Code the coder submitted.</ResponseField>
+    <ResponseField name="submitted_at" type="string">Submission timestamp.</ResponseField>
+    <ResponseField name="tl_feedback_text" type="string">TL's review comment (null if not reviewed).</ResponseField>
+    <ResponseField name="reviewed_at" type="string">Review timestamp.</ResponseField>
+    <ResponseField name="reviewed_by" type="number">ID of the reviewing TL.</ResponseField>
+    <ResponseField name="exercise_title" type="string">Exercise title.</ResponseField>
+    <ResponseField name="language" type="string">Programming language.</ResponseField>
+    <ResponseField name="difficulty" type="string">Exercise difficulty.</ResponseField>
+    <ResponseField name="topic" type="string">Exercise topic.</ResponseField>
+    <ResponseField name="solution" type="string">Reference solution.</ResponseField>
+    <ResponseField name="expected_output" type="string">Expected output.</ResponseField>
+    <ResponseField name="day_number" type="number">Plan day the exercise belongs to.</ResponseField>
+    <ResponseField name="coder_name" type="string">Coder's display name.</ResponseField>
+    <ResponseField name="coder_id" type="number">Coder's user ID.</ResponseField>
+    <ResponseField name="plan_id" type="number">Plan ID.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/tl/submissions \
+  -b cookies.txt
+```
+
+---
+
+## POST /api/tl/submissions/:id/review
+
+Adds a TL review comment to a submission, awards the coder Kairo Score points
+for having their work reviewed, and sends a real-time notification to the coder.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Submission ID to review.
+</ParamField>
+
+### Request body
+
+<ParamField body="feedbackText" type="string" required>
+  TL's review comment. Must not be empty.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="submission" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Submission ID.</ResponseField>
+    <ResponseField name="tl_feedback_text" type="string">Saved review comment.</ResponseField>
+    <ResponseField name="reviewed_at" type="string">Timestamp of the review.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/tl/submissions/201/review \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"feedbackText": "Good query structure. Consider adding an index on user_id."}'
+```
+
+```json
+{
+  "success": true,
+  "submission": {
+    "id": 201,
+    "tl_feedback_text": "Good query structure. Consider adding an index on user_id.",
+    "reviewed_at": "2026-03-15T14:30:00Z"
+  }
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | `feedbackText` is empty. |
+| `404`  | Submission not found or belongs to a coder outside the TL's clan. |
+
+---
+
+## GET /api/tl/coder/:id/score
+
+Returns the Kairo Score history for a specific coder (last 20 events) and
+their current score.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Coder's user ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="coderId" type="number">Coder ID.</ResponseField>
+<ResponseField name="currentScore" type="number">Current Kairo Score.</ResponseField>
+<ResponseField name="history" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="label" type="string">Human-readable event label (e.g. `"Día completado"`).</ResponseField>
+    <ResponseField name="points" type="number">Points awarded (positive) or deducted (negative).</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/tl/coder/42/score \
+  -b cookies.txt
+```
+
+```json
+{
+  "coderId": 42,
+  "currentScore": 83,
+  "history": [
+    { "label": "Día completado", "points": 5, "createdAt": "2026-03-14T10:00:00Z" },
+    { "label": "Ejercicio enviado", "points": 3, "createdAt": "2026-03-13T16:22:00Z" }
+  ]
+}
+```
+
+---
+
+## POST /api/tl/resource/upload
+
+Uploads a PDF resource to Supabase Storage and registers it in the `resources`
+table. Notifies all active coders in the clan.
+
+<Note>
+  This endpoint uses `multipart/form-data`. Send the file in the `file` form
+  field. Only PDF files up to 20 MB are accepted.
+</Note>
+
+### Form fields
+
+<ParamField body="file" type="file" required>
+  PDF file. Must be `application/pdf`, max 20 MB.
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Human-readable resource title.
+</ParamField>
+
+<ParamField body="moduleId" type="number">
+  Module the resource belongs to.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+<ResponseField name="resourceId" type="number">ID of the newly created resource.</ResponseField>
+<ResponseField name="storagePath" type="string">Path in Supabase Storage.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/tl/resource/upload \
+  -b cookies.txt \
+  -F "file=@sql-guide.pdf" \
+  -F "title=SQL Joins Guide" \
+  -F "moduleId=4"
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | No file received, file is not PDF, file exceeds 20 MB, or `title` is missing. |
+| `400`  | TL has no clan assigned. |
+| `500`  | Supabase Storage upload error. |
+
+---
+
+## GET /api/tl/resource/list
+
+Lists all active resources uploaded by the TL's clan.
+
+### Query parameters
+
+<ParamField query="moduleId" type="number">
+  Filter by module ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="resources" type="object[]">
+  Each item contains `id`, `title`, `file_name`, `preview_text`,
+  `uploaded_at`, `module_id`, and `clan`.
+</ResponseField>
+
+### Example
+
+```bash
+curl "https://api.kairo.app/api/tl/resource/list?moduleId=4" \
+  -b cookies.txt
+```
+
+---
+
+## DELETE /api/tl/resource/:resourceId
+
+Soft-deletes a resource (`is_active = false`) and removes the file from
+Supabase Storage. Only the TL who uploaded the resource can delete it.
+
+### Path parameters
+
+<ParamField path="resourceId" type="number" required>
+  Resource ID to delete.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+### Example
+
+```bash
+curl -X DELETE https://api.kairo.app/api/tl/resource/8 \
+  -b cookies.txt
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `404`  | Resource not found, or not uploaded by this TL, or not in this clan. |
+
+---
+
+## GET /api/tl/ranking
+
+Returns the Kairo Score ranking for the TL's clan and the global top-10
+rankings across all clans.
+
+### Response
+
+<ResponseField name="clan" type="string">TL's clan identifier.</ResponseField>
+
+<ResponseField name="clanRanking" type="object[]">
+  All active coders in the clan ordered by score descending, each with `id`,
+  `full_name`, `kairo_score`, `clan`, and `rank`.
+</ResponseField>
+
+<ResponseField name="globalRanking" type="object[]">
+  Top 10 coders across all clans with the same fields.
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/tl/ranking \
+  -b cookies.txt
+```
+
+```json
+{
+  "clan": "turing",
+  "clanRanking": [
+    { "id": 42, "full_name": "Ana Gómez", "kairo_score": 95, "rank": 1 }
+  ],
+  "globalRanking": [
+    { "id": 42, "full_name": "Ana Gómez", "kairo_score": 95, "clan": "turing", "rank": 1 }
+  ]
+}
+```

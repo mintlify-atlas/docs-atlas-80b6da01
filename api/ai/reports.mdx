@@ -1,0 +1,117 @@
+---
+title: 'POST /generate-report'
+description: 'Generate an AI-written performance analysis report for a clan.'
+---
+
+<Note>
+  This is a **Python AI microservice** endpoint. In production call it through
+  the Node.js proxy at `POST /api/ai/generate-report`, which enforces the `tl`
+  role. See the [AI gateway reference](/api/ai-gateway) for the authenticated route.
+</Note>
+
+Generates a structured, AI-written analytical report for a Team Leader's clan.
+The report covers current performance state, risks, and concrete recommendations.
+The result is saved to the `ai_reports` table.
+
+---
+
+## Request body
+
+<ParamField body="clan" type="string" required>
+  Clan identifier (e.g. `"turing"`).
+</ParamField>
+
+<ParamField body="tl_id" type="number" required>
+  ID of the TL requesting the report. Used as `target_id` when saving.
+</ParamField>
+
+<ParamField body="total_coders" type="number" required>
+  Total number of coders in the clan.
+</ParamField>
+
+<ParamField body="average_score" type="number" required>
+  Clan's average Moodle score (0–100).
+</ParamField>
+
+<ParamField body="high_risk_count" type="number" required>
+  Number of coders with `high` or `critical` risk flags.
+</ParamField>
+
+<ParamField body="top_struggling_topics" type="string[]" default="[]">
+  Topics most commonly flagged as difficult across the clan.
+</ParamField>
+
+<ParamField body="soft_skills_summary" type="object" default="{}">
+  Clan-wide soft-skills averages (e.g. `{ "autonomy": 3.2, "teamwork": 4.0 }`).
+  Omit or pass `{}` when not available.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="success" type="boolean">`true` when the report was generated and saved.</ResponseField>
+
+<ResponseField name="report" type="object">
+  <Expandable title="properties">
+    <ResponseField name="report_title" type="string">Report title, e.g. `"Clan turing — Performance Report"`.</ResponseField>
+    <ResponseField name="generated_date" type="string">Human-readable date, e.g. `"March 15, 2026"`.</ResponseField>
+    <ResponseField name="risk_level" type="string">Overall clan risk assessment: `low`, `medium`, `high`, or `critical`.</ResponseField>
+    <ResponseField name="summary" type="string">Paragraph describing the current state of the clan.</ResponseField>
+    <ResponseField name="risks" type="string">Paragraph detailing main risks and concerns.</ResponseField>
+    <ResponseField name="recommendations" type="string">Paragraph with concrete actions for the TL.</ResponseField>
+    <ResponseField name="action_items" type="string[]">3–5 specific action items for the TL to execute.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Example
+
+```bash
+curl -X POST http://localhost:8000/generate-report \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clan": "turing",
+    "tl_id": 7,
+    "total_coders": 12,
+    "average_score": 74.5,
+    "high_risk_count": 2,
+    "top_struggling_topics": ["SQL JOINs", "Normalization"],
+    "soft_skills_summary": {
+      "autonomy": 3.2,
+      "time_management": 3.8,
+      "problem_solving": 3.5,
+      "communication": 4.1,
+      "teamwork": 4.0
+    }
+  }'
+```
+
+```json
+{
+  "success": true,
+  "report": {
+    "report_title": "Clan turing — Performance Report",
+    "generated_date": "March 15, 2026",
+    "risk_level": "medium",
+    "summary": "Clan turing shows a healthy average score of 74.5 with most coders progressing steadily...",
+    "risks": "Two coders are at high risk due to persistent low scores in SQL JOINs and missed activity deadlines...",
+    "recommendations": "Schedule individual check-ins with the two high-risk coders and provide targeted JOIN exercises...",
+    "action_items": [
+      "Schedule 1-on-1 with high-risk coders this week.",
+      "Assign additional SQL JOIN resources via the resource upload feature.",
+      "Review the last 3 submitted exercises for the struggling group."
+    ]
+  }
+}
+```
+
+---
+
+## Errors
+
+| Status | Description |
+|--------|-------------|
+| `500`  | LLM returned invalid JSON. |
+| `500`  | Groq API or Supabase error. |

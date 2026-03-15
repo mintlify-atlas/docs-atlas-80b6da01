@@ -1,0 +1,110 @@
+---
+title: "Coder dashboard"
+description: "Your personalized learning hub showing active plan, progress, and notifications."
+---
+
+The coder dashboard is the first screen you see after logging in. It aggregates everything relevant to your learning journey into a single view: your active plan status, Moodle academic progress, soft skills profile, and any feedback your Team Leader has sent you.
+
+## What the dashboard shows
+
+### Welcome card
+
+At the top you see your name, clan (Turing, Tesla, or McCarthy), and a **Plan activo** badge when you have a running learning plan. Your **Kairo Score** — a point total earned by completing days, submitting exercises, and having your TL review your work — is displayed prominently.
+
+If an unresolved risk flag exists for your account, a warning banner appears inline with a short reason message.
+
+### Stats row
+
+Four stat cards give you an at-a-glance summary pulled from your `moodle_progress` record:
+
+| Card | Source field |
+|---|---|
+| Current module | `modules.name` via `users.current_module_id` |
+| Current week | `moodle_progress.current_week` |
+| Moodle score | `moodle_progress.average_score` |
+| Weeks completed | Length of `moodle_progress.weeks_completed` JSON array |
+
+### Module progress bar
+
+A dot-based progress tracker shows which weeks you have completed within the current module. The percentage is derived from `current_week / modules.total_weeks`.
+
+### Soft skills profile
+
+The right column displays your assessed soft skills as a score ring (average of all five dimensions on a 1–5 scale) and individual skill bars:
+
+- `autonomy`
+- `time_management`
+- `problem_solving`
+- `communication`
+- `teamwork`
+
+Your `learning_style` value (`visual`, `auditory`, `kinesthetic`, or `mixed`) appears below the ring.
+
+### TL feedback panel
+
+The last five messages your Team Leader sent appear at the bottom of the main column. Unread messages are surfaced here and also drive the notification bell counter.
+
+### Performance tests
+
+If your TL has recorded performance test results for you, they appear in the **Pruebas de desempeño** card with the score, status, and module.
+
+## Notification bell
+
+The bell icon in the top-right corner shows a red dot (`notif-dot`) when you have unread feedback. Clicking it opens a dropdown listing each unread `tl_feedback` message with the sender's name and timestamp. Feedback is marked as read when you open it — see [TL feedback](/features/feedback) for details.
+
+## Data source: `v_coder_dashboard` view
+
+The dashboard data is powered by the `v_coder_dashboard` PostgreSQL view, which joins the following tables:
+
+```sql
+CREATE VIEW v_coder_dashboard AS
+SELECT
+  u.id,
+  u.email,
+  u.full_name,
+  u.clan_id,
+  ssa.autonomy,
+  ssa.time_management,
+  ssa.learning_style,
+  m.name               AS module_name,
+  mp.current_week,
+  mp.average_score,
+  COUNT(DISTINCT pa.id)                                           AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)            AS completed_activities,
+  ROUND(
+    (SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)::NUMERIC
+     / NULLIF(COUNT(DISTINCT pa.id), 0)) * 100, 2
+  )                                                               AS completion_percentage
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress        mp  ON u.id = mp.coder_id
+LEFT JOIN modules                m   ON mp.module_id = m.id
+LEFT JOIN complementary_plans    cp  ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities        pa  ON cp.id = pa.plan_id
+LEFT JOIN activity_progress      ap  ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY
+  u.id, u.email, u.full_name, u.clan_id,
+  ssa.autonomy, ssa.time_management, ssa.learning_style,
+  m.name, mp.current_week, mp.average_score;
+```
+
+Key computed columns from this view:
+
+- **`total_activities`** — total `plan_activities` rows across your active plan
+- **`completed_activities`** — rows in `activity_progress` where `completed = TRUE`
+- **`completion_percentage`** — ratio of completed to total, rounded to two decimal places
+
+## API endpoint
+
+The dashboard is loaded by a single request:
+
+```http
+GET /api/coder/dashboard
+```
+
+The response bundles your user profile, soft skills, Moodle progress, active plan status, notifications, risk flags, and recent performance tests.
+
+<Note>
+If `moodle_progress` has no row for you yet (you are a new coder), `current_week` defaults to `1` and `average_score` returns `null` — the UI distinguishes "no data" from a real score of 0.
+</Note>

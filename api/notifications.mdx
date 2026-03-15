@@ -1,0 +1,188 @@
+---
+title: 'Notifications'
+description: 'Real-time SSE stream and REST endpoints for user notifications.'
+---
+
+<Note>
+  All notification routes require an active session cookie. Notifications are
+  scoped to the authenticated user — you can only read and manage your own.
+</Note>
+
+Kairo delivers notifications through two mechanisms:
+
+- **Real-time SSE** — an open `GET /api/notifications/stream` connection pushes
+  events as `text/event-stream` data the moment they occur.
+- **REST** — poll `GET /api/notifications` to fetch recent notifications, mark
+  them as read, or delete them.
+
+---
+
+## GET /api/notifications/stream
+
+Opens a persistent Server-Sent Events (SSE) connection. The server pushes
+notification events to the client in real-time without polling.
+
+**Authentication:** Required
+
+<Warning>
+  This is a long-lived HTTP connection. Do not call it with a regular
+  `fetch` — use the browser `EventSource` API or an SSE client library.
+  The connection must include credentials (cookies).
+</Warning>
+
+### Response format
+
+Each event is a JSON object sent as `data: {...}\n\n`.
+
+On connection:
+
+```json
+{ "type": "CONNECTED" }
+```
+
+When a notification arrives:
+
+```json
+{
+  "type": "NOTIFICATION",
+  "id": 15,
+  "title": "Nuevo Feedback Requerido",
+  "message": "Tu TL Juliana te ha dejado un feedback: \"Gran progreso esta semana...\"",
+  "notifType": "feedback",
+  "related_id": 88
+}
+```
+
+### Example
+
+```javascript
+const es = new EventSource(
+  'https://api.kairo.app/api/notifications/stream',
+  { withCredentials: true }
+);
+
+es.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data);
+};
+```
+
+---
+
+## GET /api/notifications
+
+Returns up to the 30 most recent notifications for the authenticated user,
+ordered by creation date descending.
+
+**Authentication:** Required
+
+### Response
+
+<ResponseField name="notifications" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="number">Notification ID.</ResponseField>
+    <ResponseField name="title" type="string">Notification title.</ResponseField>
+    <ResponseField name="message" type="string">Notification body text.</ResponseField>
+    <ResponseField name="type" type="string">
+      Category: `feedback`, `assignment`, `feedback_read`, or similar.
+    </ResponseField>
+    <ResponseField name="is_read" type="boolean">`true` once the user has marked it read.</ResponseField>
+    <ResponseField name="related_id" type="number">ID of the related entity (feedback, resource, submission, etc.).</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="unread" type="number">
+  Count of unread notifications in the returned list.
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/notifications \
+  -b cookies.txt
+```
+
+```json
+{
+  "notifications": [
+    {
+      "id": 15,
+      "title": "Nuevo Feedback Requerido",
+      "message": "Tu TL Juliana te ha dejado un feedback...",
+      "type": "feedback",
+      "is_read": false,
+      "related_id": 88,
+      "created_at": "2026-03-15T10:30:00Z"
+    }
+  ],
+  "unread": 1
+}
+```
+
+---
+
+## POST /api/notifications/read
+
+Marks **all** unread notifications for the authenticated user as read in a
+single operation.
+
+**Authentication:** Required
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/notifications/read \
+  -b cookies.txt
+```
+
+```json
+{ "success": true }
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `500`  | Database update failed. |
+
+---
+
+## DELETE /api/notifications/:id
+
+Permanently deletes a single notification. Only notifications belonging to
+the authenticated user can be deleted.
+
+**Authentication:** Required
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Notification ID to delete.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+
+### Example
+
+```bash
+curl -X DELETE https://api.kairo.app/api/notifications/15 \
+  -b cookies.txt
+```
+
+```json
+{ "success": true }
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `404`  | Notification not found or does not belong to this user. |
+| `500`  | Database error. |

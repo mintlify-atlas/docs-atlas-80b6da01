@@ -1,0 +1,120 @@
+---
+title: 'POST /search-resources'
+description: 'Search clan PDF resources by topic using text matching and embedding-based semantic similarity.'
+---
+
+<Note>
+  This is a **Python AI microservice** endpoint. In production it is called
+  through the Node.js proxy at `POST /api/coder/resources/search`, which
+  handles authentication and appends the coder's `clan_id` automatically.
+  See the [Coder endpoints reference](/api/coder) for the authenticated route.
+</Note>
+
+Searches the clan's uploaded PDF resources for content relevant to a topic.
+The service first attempts a **text-based** search against the resource title
+and preview text. If no results are found and a `module_id` is provided, it
+falls back to returning any active resources for the module.
+
+<Note>
+  An embedding model (`all-MiniLM-L6-v2`, 384 dimensions) is loaded at startup
+  for semantic similarity. The current implementation uses text search as the
+  primary path. Embedding-based vector search is available in the service
+  infrastructure and may be used as an additional ranking step.
+</Note>
+
+---
+
+## Request body
+
+<ParamField body="topic" type="string" required>
+  The search topic or query (e.g. `"SQL GROUP BY aggregation"`).
+  Returns an empty array immediately if empty.
+</ParamField>
+
+<ParamField body="clan_id" type="string" required>
+  Clan identifier. Restricts results to resources uploaded for this clan.
+</ParamField>
+
+<ParamField body="module_id" type="number">
+  Optional module filter. When provided, the fallback path returns any
+  active resource for this module if the text search yields no results.
+</ParamField>
+
+<ParamField body="limit" type="number" default="3">
+  Maximum number of resources to return.
+</ParamField>
+
+<ParamField body="coder_id" type="number">
+  Optional coder ID. Reserved for future personalisation features.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="success" type="boolean">
+  Always `true`. An empty `resources` array indicates no matches were found.
+</ResponseField>
+
+<ResponseField name="resources" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="number">Resource ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="file_name" type="string">Original PDF file name.</ResponseField>
+    <ResponseField name="preview_text" type="string">Extracted text snippet from the PDF.</ResponseField>
+    <ResponseField name="storage_path" type="string">Internal Supabase Storage path.</ResponseField>
+    <ResponseField name="module_id" type="number">Associated module ID.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">Upload timestamp.</ResponseField>
+    <ResponseField name="similarity" type="number">
+      Similarity score used for ranking. `0.8` for text-match results,
+      `0.5` for fallback results.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Example
+
+```bash
+curl -X POST http://localhost:8000/search-resources \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "SQL GROUP BY aggregation",
+    "clan_id": "turing",
+    "module_id": 4,
+    "limit": 3,
+    "coder_id": 42
+  }'
+```
+
+```json
+{
+  "success": true,
+  "resources": [
+    {
+      "id": 8,
+      "title": "SQL Aggregation Guide",
+      "file_name": "sql-aggregation.pdf",
+      "preview_text": "GROUP BY allows you to aggregate data across multiple rows...",
+      "storage_path": "turing/module-4/1710000000000_sql-aggregation.pdf",
+      "module_id": 4,
+      "uploaded_at": "2026-03-01T09:00:00Z",
+      "similarity": 0.8
+    }
+  ]
+}
+```
+
+---
+
+## Errors
+
+This endpoint does not return 4xx errors for missing results — it always
+returns `200` with `{ "success": true, "resources": [] }`. Server-side
+database or embedding errors are logged and a `500` is returned only on
+unhandled exceptions.
+
+| Status | Description |
+|--------|-------------|
+| `500`  | Unhandled database or service error. |

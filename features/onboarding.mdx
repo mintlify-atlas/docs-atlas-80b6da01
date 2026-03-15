@@ -1,0 +1,115 @@
+---
+title: "Onboarding"
+description: "First-time setup process for new Coders that captures your learning style and soft skills profile."
+---
+
+Onboarding runs once for every new Coder. It collects a soft skills assessment and determines your learning style so Kairo can generate a personalized learning plan that fits how you actually work.
+
+## How onboarding is triggered
+
+When you log in for the first time, your `users.first_login` column is `TRUE`. Kairo detects this flag and redirects you to the onboarding diagnostic before you can access the dashboard. After you complete the diagnostic successfully, `first_login` is set to `FALSE` and you are never sent back.
+
+```sql
+-- Column in the users table
+first_login BOOLEAN DEFAULT TRUE
+```
+
+<Info>
+You can retake the diagnostic at any time from your profile settings, but the plan already active will not be automatically regenerated — you need to request a new plan manually.
+</Info>
+
+## The diagnostic flow
+
+The diagnostic is a **30-question assessment** divided into 7 blocks (B1–B7). Each block probes a different dimension of how you learn:
+
+| Block | Dimension |
+|---|---|
+| B1 | Sensory channels (visual, auditory, reading, practice) |
+| B2 | Active vs. reflective |
+| B3 | Concrete vs. intuitive |
+| B4 | Sequential vs. global |
+| B5 | Visual vs. verbal |
+| B6 | Experiential learning cycle |
+| B7 | Integrative profile (cross-cutting questions) |
+
+The scoring algorithm applies three internationally recognized models — **VARK**, **Felder-Soloman**, and **Kolb** — to produce your profile.
+
+<Steps>
+  <Step title="Log in for the first time">
+    Kairo detects `first_login = TRUE` on your account and redirects you to the diagnostic page instead of the dashboard.
+  </Step>
+  <Step title="Answer all 30 questions">
+    Work through blocks B1 to B7. Each question shows four options (A–D). Click an option or press the corresponding keyboard key — the next question advances automatically. Use **← Atrás** to change a previous answer.
+  </Step>
+  <Step title="Kairo processes your answers">
+    Your raw answers are stored in `soft_skills_assessment.raw_answers` (JSONB). The scoring engine derives your five soft skill dimensions and your `learning_style`.
+  </Step>
+  <Step title="Profile is saved">
+    A row is inserted into `soft_skills_assessment` with your scores and learning style. Your `first_login` flag is set to `FALSE`.
+  </Step>
+  <Step title="Redirected to the dashboard">
+    You land on your dashboard. A personalized learning plan can now be generated using your profile.
+  </Step>
+</Steps>
+
+## Soft skills dimensions
+
+Five dimensions are recorded in `soft_skills_assessment`, each rated on a scale of **1 to 5**:
+
+```sql
+CREATE TABLE soft_skills_assessment (
+  id           SERIAL PRIMARY KEY,
+  coder_id     INT NOT NULL UNIQUE,
+  autonomy     INT NOT NULL CHECK (autonomy     BETWEEN 1 AND 5),
+  time_management INT NOT NULL CHECK (time_management BETWEEN 1 AND 5),
+  problem_solving INT NOT NULL CHECK (problem_solving BETWEEN 1 AND 5),
+  communication   INT NOT NULL CHECK (communication   BETWEEN 1 AND 5),
+  teamwork        INT NOT NULL CHECK (teamwork        BETWEEN 1 AND 5),
+  learning_style  learning_style_enum NOT NULL,
+  raw_answers     JSONB,
+  assessed_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (coder_id) REFERENCES users(id) ON DELETE CASCADE
+);
+```
+
+| Dimension | What it measures |
+|---|---|
+| `autonomy` | How independently you work without external prompts |
+| `time_management` | How well you organize and prioritize your time |
+| `problem_solving` | Your approach to diagnosing and resolving blockers |
+| `communication` | How clearly you express ideas and ask for help |
+| `teamwork` | Your effectiveness when collaborating with others |
+
+A score of `1` indicates a significant development area; `5` indicates a strength. These scores directly influence which soft skill your learning plan targets.
+
+## Learning style
+
+The `learning_style_enum` determines how activity content is presented in your plan:
+
+```sql
+CREATE TYPE learning_style_enum AS ENUM (
+  'visual',
+  'auditory',
+  'kinesthetic',
+  'mixed'
+);
+```
+
+| Value | Description |
+|---|---|
+| `visual` | You learn best with diagrams, charts, and visual representations |
+| `auditory` | You prefer explanations, lectures, and discussion |
+| `kinesthetic` | You learn by doing — hands-on practice and experimentation |
+| `mixed` | You use a combination of styles depending on context |
+
+## How this feeds into plan generation
+
+After onboarding, both the Python AI service (`POST /generate-plan`) and the focus cards generator (`POST /generate-focus-cards`) read your `soft_skills_assessment` row before producing any content:
+
+- The **`plan_type`** (`interpretive` or `analytical`) is chosen based on whether your Moodle data is available.
+- The **targeted soft skill** is set to whichever dimension scored lowest, so the plan includes activities designed to strengthen it.
+- The **`learning_style`** is used to adapt the theory explanations and activity format inside each plan card.
+
+<Tip>
+There are no right or wrong answers in the diagnostic. Answer with your instinctive first reaction for the most accurate profile.
+</Tip>

@@ -1,0 +1,107 @@
+---
+title: 'POST /generate-focus-cards'
+description: 'Generate 6 personalized study focus cards for a coder, prioritized by difficulty.'
+---
+
+<Note>
+  This is a **Python AI microservice** endpoint. In production call it through
+  the Node.js proxy at `POST /api/ai/generate-focus-cards`.
+  See the [AI gateway reference](/api/ai-gateway) for the authenticated route.
+</Note>
+
+Generates exactly 6 study cards personalized to the coder's learning style,
+soft-skills profile, and current module. Cards are distributed as 2 High /
+2 Medium / 2 Low priority, with High-priority cards targeting the coder's
+struggling topics.
+
+---
+
+## Request body
+
+<ParamField body="coder_id" type="number" required>
+  ID of the coder. Used to fetch their soft-skills profile and learning style.
+</ParamField>
+
+<ParamField body="module_id" type="number" required>
+  ID of the current module. Used to fetch module topics.
+</ParamField>
+
+<ParamField body="struggling_topics" type="string[]" default="[]">
+  Topics the coder is struggling with. High-priority cards will focus on these.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="success" type="boolean">`true` when cards were generated.</ResponseField>
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="cards" type="object[]">
+      Array of exactly 6 card objects.
+      <Expandable title="card properties">
+        <ResponseField name="priority" type="string">`high`, `medium`, or `low`.</ResponseField>
+        <ResponseField name="topic" type="string">Exact topic name from the module curriculum.</ResponseField>
+        <ResponseField name="title" type="string">Actionable card title.</ResponseField>
+        <ResponseField name="theory" type="string">3–4 sentence explanation adapted to the coder's learning style.</ResponseField>
+        <ResponseField name="practice" type="object">
+          <Expandable title="properties">
+            <ResponseField name="description" type="string">What the coder should do in 20 minutes.</ResponseField>
+            <ResponseField name="example" type="string">Code snippet or concrete steps.</ResponseField>
+          </Expandable>
+        </ResponseField>
+        <ResponseField name="pro_tips" type="string[]">
+          Array of 2 concrete tips for mastering the topic.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Example
+
+```bash
+curl -X POST http://localhost:8000/generate-focus-cards \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 42,
+    "module_id": 4,
+    "struggling_topics": ["SQL JOINs", "Indexes"]
+  }'
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "cards": [
+      {
+        "priority": "high",
+        "topic": "SQL JOINs",
+        "title": "Master INNER vs LEFT JOIN in 20 minutes",
+        "theory": "JOIN clauses combine rows from two tables...",
+        "practice": {
+          "description": "Write a query that joins users with orders using INNER JOIN and then LEFT JOIN.",
+          "example": "SELECT u.name, o.total FROM users u LEFT JOIN orders o ON u.id = o.user_id;"
+        },
+        "pro_tips": [
+          "Always alias your tables when using JOINs.",
+          "Use EXPLAIN to check if your JOIN is using an index."
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Errors
+
+| Status | Description |
+|--------|-------------|
+| `500`  | LLM returned invalid JSON. |
+| `500`  | LLM or Groq API error. |

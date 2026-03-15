@@ -1,0 +1,139 @@
+---
+title: "Coder analytics"
+description: "Deep-dive into individual Coder performance metrics including Moodle scores, activity completion, and soft skills."
+---
+
+Coder analytics gives you detailed insight into any individual Coder's performance. You access it from the detail panel on the TL dashboard by selecting a Coder row.
+
+## Individual coder data
+
+The detail panel pulls from `GET /api/tl/coder/:id/details`, which joins four tables:
+
+```sql
+SELECT
+  u.id,
+  u.full_name,
+  u.email,
+  u.clan             AS clan_id,
+  u.created_at,
+  mp.average_score,
+  mp.current_week,
+  mp.weeks_completed,
+  ss.autonomy,
+  ss.time_management,
+  ss.problem_solving,
+  ss.communication,
+  ss.teamwork,
+  ss.learning_style
+FROM users u
+LEFT JOIN moodle_progress        mp ON u.id = mp.coder_id
+LEFT JOIN soft_skills_assessment ss ON u.id = ss.coder_id
+WHERE u.id = $1
+  AND u.role = 'coder';
+```
+
+Metrics available for each Coder:
+
+| Metric | Source | Description |
+|---|---|---|
+| `average_score` | `moodle_progress` | Overall Moodle performance score (0–100) |
+| `current_week` | `moodle_progress` | The module week the coder is currently in |
+| `weeks_completed` | `moodle_progress` | JSONB array of completed week records |
+| `autonomy` | `soft_skills_assessment` | Self-direction score (1–5) |
+| `time_management` | `soft_skills_assessment` | Time organization score (1–5) |
+| `problem_solving` | `soft_skills_assessment` | Problem-solving score (1–5) |
+| `communication` | `soft_skills_assessment` | Communication score (1–5) |
+| `teamwork` | `soft_skills_assessment` | Collaboration score (1–5) |
+| `learning_style` | `soft_skills_assessment` | Learning style enum value |
+
+## Risk analysis view
+
+The `v_coder_risk_analysis` view enriches individual metrics with calculated and stored risk levels:
+
+```sql
+CREATE VIEW v_coder_risk_analysis AS
+SELECT
+  u.id,
+  u.email,
+  u.full_name,
+  ssa.autonomy,
+  ssa.time_management,
+  mp.average_score,
+  COALESCE(rf.risk_level, 'low'::risk_level_enum) AS current_risk_level,
+  CASE
+    WHEN ssa.autonomy <= 2 AND mp.average_score < 70 THEN 'high'::risk_level_enum
+    WHEN ssa.autonomy <= 2 OR  mp.average_score < 70 THEN 'medium'::risk_level_enum
+    ELSE                                                  'low'::risk_level_enum
+  END                                                    AS calculated_risk_level,
+  COUNT(DISTINCT pa.id)                                  AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)   AS completed_activities
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress        mp  ON u.id = mp.coder_id
+LEFT JOIN risk_flags             rf  ON u.id = rf.coder_id AND rf.resolved = FALSE
+LEFT JOIN complementary_plans    cp  ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities        pa  ON cp.id = pa.plan_id
+LEFT JOIN activity_progress      ap  ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY
+  u.id, u.email, u.full_name,
+  ssa.autonomy, ssa.time_management,
+  mp.average_score, rf.risk_level;
+```
+
+Two risk columns are available:
+
+- **`current_risk_level`** — the most severe unresolved flag stored in `risk_flags`. Defaults to `low` if no flag exists.
+- **`calculated_risk_level`** — computed on the fly from the current `autonomy` score and `average_score`. This is the value used by the auto-detection logic.
+
+## Score history
+
+To view how a Coder's Kairo Score has evolved over time:
+
+```http
+GET /api/tl/coder/:id/score
+```
+
+Returns up to 20 recent score events with human-readable labels:
+
+| Event type | Label |
+|---|---|
+| `day_complete` | Día completado |
+| `exercise_submit` | Ejercicio enviado |
+| `tl_approved` | TL aprobó solución |
+| `plan_complete` | Plan completado (bonus) |
+| `inactivity` | Días sin actividad |
+
+## Group analytics
+
+Clan-level aggregates are shown on the main TL dashboard. The `getClanMetrics` function computes:
+
+```http
+GET /api/tl/metrics/clan/:clan_id
+```
+
+```json
+{
+  "clanId": "Turing",
+  "metrics": {
+    "averagePerformance": "74.50",
+    "highRiskCoders": 2,
+    "totalStudents": 12,
+    "riskPercentage": 16.67
+  }
+}
+```
+
+Soft skills averages for the clan are computed by summing each dimension across all coders who have completed onboarding and dividing by the count:
+
+```javascript
+// From getDashboardData in tlControllers.js
+Object.keys(softSkillsAverage).forEach((key) => {
+  softSkillsAverage[key] =
+    parseFloat((softSkillsAverage[key] / codersWithSkills.length).toFixed(1));
+});
+```
+
+<Info>
+Coders who have not yet completed onboarding (`first_login = TRUE`) are excluded from the soft skills average because they have no `soft_skills_assessment` row yet.
+</Info>

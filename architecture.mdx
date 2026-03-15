@@ -1,0 +1,105 @@
+---
+title: "Architecture"
+description: "How Kairo's three services communicate and why the hybrid design exists."
+---
+
+## Overview
+
+Kairo is a distributed system with three independently deployed services. Node.js acts as the **system orchestrator** — handling authentication, business logic, and routing. Python is the **AI brain** — running LLM inference, generating personalized learning plans, and performing semantic resource search. The frontend is a static Multi-Page Application that talks only to Node.js.
+
+## Services at a glance
+
+| Service | Port | Technology | Responsibility |
+|---|---|---|---|
+| **API Gateway** | `3000` | Node.js + Express 5 | Auth, sessions, business logic, proxying AI requests |
+| **AI Microservice** | `8000` | Python + FastAPI | LLM inference, plan generation, RAG, exercises |
+| **Frontend** | `5500` | Vanilla JS + Bootstrap 5 | UI for Coders and Team Leaders |
+| **Database** | hosted | PostgreSQL 14+ (Supabase) | Persistent storage, RLS |
+
+## Request flow
+
+Most user-facing requests follow this path:
+
+```
+Browser (port 5500)
+  └─► Node.js Gateway (port 3000)
+        ├─► PostgreSQL / Supabase  (direct queries via pg + @supabase/supabase-js)
+        └─► Python AI Service (port 8000)  (HTTP via PYTHON_API_URL)
+              └─► Groq LLM API  (Qwen2.5 / llama-3.3-70b-versatile)
+```
+
+The frontend never calls the Python service directly. All AI-related requests flow through Node.js, which validates the session, enriches the payload with user data, and forwards it to the Python microservice.
+
+## Why a hybrid architecture?
+
+**Node.js as orchestrator** provides fast I/O for handling many concurrent user sessions, integrates cleanly with Passport.js for OAuth, and offers a mature ecosystem for session management and rate limiting.
+
+**Python as the AI brain** gives access to the scientific Python stack — LangChain for prompt engineering and JSON output validation, Groq for fast LLM inference, `all-MiniLM-L6-v2` for sentence embeddings, and `pdfplumber`/`fpdf2` for document processing.
+
+Keeping the AI workload in a separate process also means you can scale or replace the AI microservice independently.
+
+## Role system
+
+Every user has a `role` stored in the `users` table as a `role_enum` value.
+
+| Role | Description |
+|---|---|
+| `coder` | Bootcamp student. Receives personalized AI learning plans, practice exercises, and TL feedback. |
+| `tl` | Team Leader / instructor. Accesses the analytics dashboard, risk flags, and AI-generated reports across their clan. |
+
+The Node.js gateway enforces role-based access on every protected route. A `coder` hitting a TL-only endpoint receives a `403 Forbidden` response.
+
+Coders also belong to a **clan** (`clan_id`: `Turing`, `Tesla`, or `McCarthy`), which TLs use to filter their dashboard.
+
+## Authentication flow
+
+Kairo uses **session-based authentication** managed by Passport.js and stored in PostgreSQL.
+
+1. The user submits credentials (or completes an OAuth flow with GitHub / Google).
+2. Node.js validates the credentials and calls `passport.serializeUser`, storing the user ID in the `session` table.
+3. The browser receives a `riwi.sid` cookie (HTTP-only, `SameSite=lax` in development, `SameSite=none; Secure` in production).
+4. Subsequent requests include the cookie; `passport.deserializeUser` rehydrates the full user object from PostgreSQL.
+5. Protected routes check `req.isAuthenticated()` and `req.user.role` before proceeding.
+
+OAuth callbacks are handled at:
+- `GET /api/auth/github/callback`
+- `GET /api/auth/google/callback`
+
+## API routes
+
+### Node.js gateway (`localhost:3000`)
+
+| Prefix | Router file | Description |
+|---|---|---|
+| `/api/auth` | `authRoutes.js` | Login, logout, registration, OAuth, OTP |
+| `/api/diagnostics` | `diagnosticRoutes.js` | Soft skills onboarding assessment |
+| `/api/coder` | `coderRoutes.js` | Coder dashboard data, progress, plans |
+| `/api/tl` | `tlRoutes.js` | TL dashboard, clan overviews, risk flags |
+| `/api/ai` | `iaRoutes.js` | AI proxy — forwards requests to Python service |
+| `/api/notifications` | `notificationRoutes.js` | TL feedback notifications |
+| `/api/profile` | `profileRoutes.js` | User profile CRUD |
+| `/api` | `assignmentRoutes.js` | Assignment and evidence submissions |
+| `GET /api/health` | inline | Database connectivity health check |
+
+### Python AI microservice (`localhost:8000`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/generate-plan` | Generate a personalized 4-week learning plan |
+| `POST` | `/generate-focus-cards` | Generate the 6 priority focus cards |
+| `POST` | `/chat/ask` | AI assistant chat turn |
+| `POST` | `/generate-report` | Generate a TL executive report |
+| `POST` | `/generate-exercise` | Generate a practice exercise |
+| `POST` | `/exercise/{id}/submit` | Submit and evaluate an exercise |
+| `POST` | `/search-resources` | Semantic resource search (RAG) |
+| `GET` | `/health` | Service health check |
+| `GET` | `/docs` | Interactive Swagger UI |
+
+## Rate limiting
+
+The Node.js gateway applies two rate limiters:
+
+| Limiter | Window | Max requests | Applied to |
+|---|---|---|---|
+| `authLimiter` | 15 minutes | 20 per IP | Auth routes |
+| `otpLimiter` | 10 minutes | 5 per IP | OTP verification |

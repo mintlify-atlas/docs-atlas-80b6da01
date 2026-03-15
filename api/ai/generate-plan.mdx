@@ -1,0 +1,157 @@
+---
+title: 'POST /generate-plan'
+description: 'Generate a personalized 20-day complementary learning plan for a coder.'
+---
+
+<Note>
+  This is a **Python AI microservice** endpoint. In production it is called
+  indirectly through the Node.js proxy at `POST /api/ai/generate-plan`.
+  See the [AI gateway reference](/api/ai-gateway) for the authenticated route.
+</Note>
+
+Generates a personalized complementary learning plan using the coder's
+soft-skills profile, module curriculum, and optionally their Moodle performance
+data. The plan is saved to the database and any previous active plan for the
+same coder is deactivated.
+
+---
+
+## Request body
+
+<ParamField body="coder_id" type="number" required>
+  ID of the coder for whom the plan is generated.
+</ParamField>
+
+<ParamField body="module_id" type="number" required>
+  ID of the current module. Used to fetch weeks, topics, and module metadata.
+</ParamField>
+
+<ParamField body="plan_type" type="string" default="interpretive">
+  Plan generation strategy. Must be `"interpretive"` or `"analytical"`.
+  See [Plan types](#plan-types) below.
+</ParamField>
+
+<ParamField body="current_week" type="number" default="1">
+  Current week number within the module.
+</ParamField>
+
+<ParamField body="average_score" type="number" default="0.0">
+  Coder's Moodle average score (0–100). Used by `analytical` plans.
+  Ignored for `interpretive` plans.
+</ParamField>
+
+<ParamField body="struggling_topics" type="string[]" default="[]">
+  List of topics where the coder is underperforming. Used by `analytical` plans.
+</ParamField>
+
+<ParamField body="weeks_completed" type="object[]" default="[]">
+  Moodle weeks-completed history. Used by `analytical` plans.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="success" type="boolean">`true` when the plan was generated successfully.</ResponseField>
+
+<ResponseField name="plan_id" type="number">
+  Database ID of the newly saved plan in `complementary_plans`.
+</ResponseField>
+
+<ResponseField name="plan" type="object">
+  Full AI-generated plan JSON. Structure varies by plan type but always includes:
+  <Expandable title="common properties">
+    <ResponseField name="targeted_soft_skill" type="string">The soft skill the plan focuses on developing.</ResponseField>
+    <ResponseField name="status" type="string">`"ok"` on success, `"fallback"` if the LLM returned a degraded response.</ResponseField>
+    <ResponseField name="days" type="object[]" >Array of 20 day objects, each with activities, topic, and resources.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  <Expandable title="properties">
+    <ResponseField name="plan_type" type="string">`interpretive` or `analytical`.</ResponseField>
+    <ResponseField name="coder_id" type="number">Coder ID.</ResponseField>
+    <ResponseField name="module_id" type="number">Module ID.</ResponseField>
+    <ResponseField name="module_name" type="string">Module name.</ResponseField>
+    <ResponseField name="current_week" type="number">Week number used for generation.</ResponseField>
+    <ResponseField name="execution_ms" type="number">LLM generation time in milliseconds.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Plan types
+
+### `interpretive` (default)
+
+Builds the plan primarily from the coder's **soft-skills profile** (autonomy,
+time management, problem solving, communication, teamwork, learning style).
+Ideal for new coders at the start of a module who do not yet have Moodle
+performance data.
+
+### `analytical`
+
+Builds the plan from both the soft-skills profile **and** Moodle performance
+data (`average_score`, `struggling_topics`, `weeks_completed`). When
+`average_score` is `0.0` and `weeks_completed` is empty, the service
+automatically fetches the latest Moodle progress from the database. Best for
+coders mid-module who have accumulated performance data.
+
+---
+
+## Example
+
+```bash
+curl -X POST http://localhost:8000/generate-plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 42,
+    "module_id": 4,
+    "plan_type": "analytical",
+    "current_week": 3,
+    "average_score": 68.5,
+    "struggling_topics": ["SQL JOINs", "Indexes"],
+    "weeks_completed": [
+      { "week": 1, "score": 80 },
+      { "week": 2, "score": 57 }
+    ]
+  }'
+```
+
+```json
+{
+  "success": true,
+  "plan_id": 17,
+  "plan": {
+    "targeted_soft_skill": "problem_solving",
+    "status": "ok",
+    "days": [
+      {
+        "day": 1,
+        "topic": "SQL JOINs",
+        "activities": ["Read JOIN types", "Practice INNER JOIN"],
+        "estimated_minutes": 60
+      }
+    ]
+  },
+  "metadata": {
+    "plan_type": "analytical",
+    "coder_id": 42,
+    "module_id": 4,
+    "module_name": "Bases de Datos",
+    "current_week": 3,
+    "execution_ms": 4210
+  }
+}
+```
+
+---
+
+## Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | `plan_type` is not `interpretive` or `analytical`. |
+| `400`  | No soft-skills diagnostic found for the coder. Complete onboarding first. |
+| `404`  | Module not found. |
+| `500`  | LLM generation error or database failure. |

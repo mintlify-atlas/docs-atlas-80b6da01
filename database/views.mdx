@@ -1,0 +1,173 @@
+---
+title: "Database views"
+description: "Pre-built SQL views for dashboards and analytics"
+---
+
+Kairo ships two SQL views that aggregate data across multiple tables. Both views filter for users with `role = 'coder'` and join soft-skills, academic progress, plans, and activities into a single queryable result set.
+
+<Info>
+  Views are read-only. You cannot `INSERT`, `UPDATE`, or `DELETE` through them. Query the underlying tables directly for write operations.
+</Info>
+
+---
+
+## `v_coder_dashboard`
+
+Powers the coder's personal dashboard. Returns one row per coder with their soft-skills profile, current module progress, and activity completion statistics.
+
+### Columns
+
+| Column | Source | Description |
+|---|---|---|
+| `id` | `users.id` | Coder user ID |
+| `email` | `users.email` | Coder email address |
+| `full_name` | `users.full_name` | Display name |
+| `clan_id` | `users.clan_id` | Clan name (`Turing`, `Tesla`, `McCarthy`) |
+| `autonomy` | `soft_skills_assessment.autonomy` | Autonomy score (1–5) |
+| `time_management` | `soft_skills_assessment.time_management` | Time management score (1–5) |
+| `learning_style` | `soft_skills_assessment.learning_style` | Preferred learning style |
+| `module_name` | `modules.name` | Name of the current module |
+| `current_week` | `moodle_progress.current_week` | Current week within the module |
+| `average_score` | `moodle_progress.average_score` | Module average score (0–100) |
+| `total_activities` | Calculated | Total activities across all active plans |
+| `completed_activities` | Calculated | Number of completed activities |
+| `completion_percentage` | Calculated | `(completed / total) * 100`, rounded to 2 decimals |
+
+### SQL definition
+
+```sql
+CREATE VIEW v_coder_dashboard AS
+SELECT 
+  u.id,
+  u.email,
+  u.full_name,
+  u.clan_id,
+  ssa.autonomy,
+  ssa.time_management,
+  ssa.learning_style,
+  m.name AS module_name,
+  mp.current_week,
+  mp.average_score,
+  COUNT(DISTINCT pa.id) AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END) AS completed_activities,
+  ROUND((SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END)::NUMERIC / 
+         NULLIF(COUNT(DISTINCT pa.id), 0)) * 100, 2) AS completion_percentage
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress mp ON u.id = mp.coder_id
+LEFT JOIN modules m ON mp.module_id = m.id
+LEFT JOIN complementary_plans cp ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities pa ON cp.id = pa.plan_id
+LEFT JOIN activity_progress ap ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY u.id, u.email, u.full_name, u.clan_id, ssa.autonomy, ssa.time_management,
+         ssa.learning_style, m.name, mp.current_week, mp.average_score;
+```
+
+### Usage
+
+Query this view from the frontend to render the coder's dashboard in a single round-trip:
+
+```sql
+-- Load dashboard data for the authenticated coder
+SELECT *
+FROM v_coder_dashboard
+WHERE id = auth.uid()::int;
+```
+
+```sql
+-- TL: view all coders in a clan sorted by completion
+SELECT full_name, module_name, current_week, average_score, completion_percentage
+FROM v_coder_dashboard
+WHERE clan_id = 'Turing'
+ORDER BY completion_percentage DESC;
+```
+
+<Note>
+  `completion_percentage` uses `NULLIF` to avoid division-by-zero when a coder has no active plan activities. It returns `NULL` rather than an error in that case.
+</Note>
+
+---
+
+## `v_coder_risk_analysis`
+
+Powers the TL's risk analytics panel. Combines stored risk flags with a freshly calculated risk level derived from the coder's autonomy score and academic average.
+
+### Columns
+
+| Column | Source | Description |
+|---|---|---|
+| `id` | `users.id` | Coder user ID |
+| `email` | `users.email` | Coder email address |
+| `full_name` | `users.full_name` | Display name |
+| `autonomy` | `soft_skills_assessment.autonomy` | Autonomy score (1–5) |
+| `time_management` | `soft_skills_assessment.time_management` | Time management score (1–5) |
+| `average_score` | `moodle_progress.average_score` | Module average score (0–100) |
+| `current_risk_level` | `risk_flags.risk_level` | Most recent stored risk flag level (defaults to `'low'` when no open flag exists) |
+| `calculated_risk_level` | Calculated | Real-time risk level derived from autonomy and score (see logic below) |
+| `total_activities` | Calculated | Total activities across active plans |
+| `completed_activities` | Calculated | Number of completed activities |
+
+### SQL definition
+
+```sql
+CREATE VIEW v_coder_risk_analysis AS
+SELECT 
+  u.id,
+  u.email,
+  u.full_name,
+  ssa.autonomy,
+  ssa.time_management,
+  mp.average_score,
+  COALESCE(rf.risk_level, 'low'::risk_level_enum) AS current_risk_level,
+  CASE 
+    WHEN ssa.autonomy <= 2 AND mp.average_score < 70 THEN 'high'::risk_level_enum
+    WHEN ssa.autonomy <= 2 OR mp.average_score < 70 THEN 'medium'::risk_level_enum
+    ELSE 'low'::risk_level_enum
+  END AS calculated_risk_level,
+  COUNT(DISTINCT pa.id) AS total_activities,
+  SUM(CASE WHEN ap.completed = TRUE THEN 1 ELSE 0 END) AS completed_activities
+FROM users u
+LEFT JOIN soft_skills_assessment ssa ON u.id = ssa.coder_id
+LEFT JOIN moodle_progress mp ON u.id = mp.coder_id
+LEFT JOIN risk_flags rf ON u.id = rf.coder_id AND rf.resolved = FALSE
+LEFT JOIN complementary_plans cp ON u.id = cp.coder_id AND cp.is_active = TRUE
+LEFT JOIN plan_activities pa ON cp.id = pa.plan_id
+LEFT JOIN activity_progress ap ON pa.id = ap.activity_id AND ap.coder_id = u.id
+WHERE u.role = 'coder'
+GROUP BY u.id, u.email, u.full_name, ssa.autonomy, ssa.time_management,
+         mp.average_score, rf.risk_level;
+```
+
+### Risk calculation logic
+
+The `calculated_risk_level` column evaluates two signals in real time:
+
+| Condition | Result |
+|---|---|
+| `autonomy <= 2` **AND** `average_score < 70` | `high` |
+| `autonomy <= 2` **OR** `average_score < 70` | `medium` |
+| Neither condition is true | `low` |
+
+This differs from `current_risk_level`, which reflects the last unresolved flag stored in `risk_flags`. Use `calculated_risk_level` for a live assessment and `current_risk_level` to see what was most recently flagged by the `risk_detector` agent.
+
+### Usage
+
+```sql
+-- TL: list all high-risk coders right now
+SELECT full_name, autonomy, average_score, calculated_risk_level
+FROM v_coder_risk_analysis
+WHERE calculated_risk_level = 'high'
+ORDER BY average_score ASC;
+```
+
+```sql
+-- Compare stored vs calculated risk to find coders whose situation has changed
+SELECT full_name, current_risk_level, calculated_risk_level
+FROM v_coder_risk_analysis
+WHERE current_risk_level != calculated_risk_level;
+```
+
+<Warning>
+  `current_risk_level` joins only on `resolved = FALSE`. A coder with no open flags defaults to `'low'` via `COALESCE`, even if they previously had high-risk flags that were resolved.
+</Warning>

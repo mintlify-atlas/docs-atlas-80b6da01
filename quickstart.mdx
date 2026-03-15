@@ -1,80 +1,229 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get both backend services running in under 10 minutes."
 ---
 
-## Get started in three steps
+<Note>
+  Kairo requires all three services running simultaneously: the Node.js API gateway, the Python AI microservice, and the frontend. This guide gets the two backends up first.
+</Note>
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you start, make sure you have the following installed:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- **Node.js 18+** — [nodejs.org](https://nodejs.org)
+- **Python 3.10+** — [python.org](https://www.python.org)
+- **PostgreSQL via Supabase** — a free project at [supabase.com](https://supabase.com) works fine
+- **Git**
 
-### Step 2: Deploy your changes
+Verify your versions:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash
+node --version   # v18.0.0 or higher
+python3 --version  # 3.10.0 or higher
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Get started
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/Riwi-Project-C6/Learning-Platform.git
+    cd Learning-Platform
+    ```
+  </Step>
 
-### Step 3: Go live
+  <Step title="Configure environment variables">
+    Create two `.env` files — one for each backend service.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    **`backend-node/.env`**
+
+    ```env
+    # SERVER CONFIGURATION
+    PORT=3000
+    NODE_ENV=development
+
+    # SECURITY & SESSIONS
+    SESSION_SECRET=your_session_secret
+
+    # DATABASE (POSTGRESQL - SUPABASE)
+    DB_HOST=your_host
+    DB_PORT=5432
+    DB_NAME=your_name
+    DB_USER=postgres.your_user
+    DB_PASSWORD=your_password
+    DATABASE_URL=your_database_url
+
+    # SUPABASE CONFIG
+    SUPABASE_URL=your_supabase_url
+    SUPABASE_ANON_KEY=your_anon_key
+
+    # FRONTEND CONNECTION
+    FRONTEND_URL=http://127.0.0.1:5500/frontend
+
+    # PYTHON CONNECTION
+    PYTHON_API_URL=http://localhost:8000
+
+    # SOCIAL AUTH - GITHUB
+    GITHUB_CLIENT_ID=your_client
+    GITHUB_CLIENT_SECRET=your_client_secret
+
+    # SOCIAL AUTH - GOOGLE
+    GOOGLE_CLIENT_ID=your_client
+    GOOGLE_CLIENT_SECRET=your_client_secret
+
+    # AUTHENTICATION SMTP
+    SMTP_HOST=smtp.gmail.com
+    SMTP_PORT=465
+    SMTP_SECURE=true
+    SMTP_USER=your_email
+    SMTP_PASS=your_app_password
+    SMTP_FROM="Kairo <your_email>"
+
+    # API KEY AI
+    RIWI_IA_KEY=your_ia_key
+    ```
+
+    **`backend-python/.env`**
+
+    ```env
+    # PYTHON CONFIGURATION
+    PORT=8000
+    ENV=development
+
+    # OPENAI-COMPATIBLE API (Groq)
+    OPENAI_API_KEY=your_api_key
+
+    # MODEL IA
+    MODEL_NAME=your_model
+
+    # SUPABASE CONFIG
+    SUPABASE_URL=your_supabase_url
+    SUPABASE_SERVICE_KEY=your_service_key
+
+    # BACKEND NODE PORT
+    NODE_URL=http://localhost:3000
+
+    # FRONTEND PORT
+    FRONTEND_URL=http://localhost:5500
+    ```
+
+    <Warning>
+      `FRONTEND_URL` in `backend-node/.env` must match the **exact origin** where the frontend is hosted — including protocol, domain, and port. A mismatch will cause the Node.js CORS middleware to block all frontend requests. For example, `http://127.0.0.1:5500` and `http://localhost:5500` are treated as different origins.
+    </Warning>
+  </Step>
+
+  <Step title="Start the Node.js gateway">
+    Open a terminal, navigate to `backend-node`, install dependencies, and start the dev server:
+
+    ```bash
+    cd backend-node
+    npm install
+    npm run dev
+    ```
+
+    A successful start prints:
+
+    ```
+    🚀 KAIRO API GATEWAY STARTED SUCCESSFULLY
+    📡 URL      : http://localhost:3000
+    ```
+  </Step>
+
+  <Step title="Start the Python AI microservice">
+    Open a second terminal and navigate to `backend-python`.
+
+    <CodeGroup>
+
+    ```bash Linux / macOS
+    cd backend-python
+    python3 -m venv env
+    source env/bin/activate
+    pip install -r requirements.txt
+    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ```
+
+    ```powershell Windows
+    cd backend-python
+    python -m venv env
+    env\Scripts\Activate.ps1
+    pip install -r requirements.txt
+    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ```
+
+    </CodeGroup>
+
+    A successful start logs:
+
+    ```
+    INFO: Kairo AI Service v2.3.0  |  starting up
+    INFO: Uvicorn running on http://0.0.0.0:8000
+    ```
+  </Step>
+
+  <Step title="Start the frontend">
+    Open a third terminal in the repository root. The recommended method is **VS Code Live Server** on port 5500. Alternatively:
+
+    ```bash
+    npx serve -p 5500
+    ```
+
+    Make sure `FRONTEND_URL` in `backend-node/.env` reflects whichever URL Live Server uses.
+  </Step>
+
+  <Step title="Verify both services are running">
+    With both backends started, run the health checks:
+
+    <CodeGroup>
+
+    ```bash Node.js gateway
+    curl http://localhost:3000/api/health
+    ```
+
+    ```bash Python AI microservice
+    curl http://localhost:8000/health
+    ```
+
+    </CodeGroup>
+
+    Expected responses:
+
+    ```json Node.js gateway
+    {
+      "status": "active",
+      "uptime": 12.34,
+      "database": { "connected": true, "timestamp": "2026-03-15T..." }
+    }
+    ```
+
+    ```json Python AI microservice
+    {
+      "status": "online",
+      "service": "Kairo AI Engine",
+      "version": "2.3.0",
+      "model": "llama-3.3-70b-versatile",
+      "embeddings": "all-MiniLM-L6-v2 (384d)",
+      "environment": "development"
+    }
+    ```
+
+    If either health check returns an error, confirm the `.env` values are correct and the database schema has been applied. See [Database setup](/setup/database) for details.
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how the three services communicate.
+  </Card>
+  <Card title="Environment variables" icon="gear" href="/setup/environment">
+    Full reference for every `.env` variable.
+  </Card>
+  <Card title="Database setup" icon="database" href="/setup/database">
+    Create your Supabase project and apply the schema.
+  </Card>
+  <Card title="Running locally" icon="terminal" href="/setup/running-locally">
+    Tips for day-to-day local development.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

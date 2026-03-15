@@ -1,0 +1,180 @@
+---
+title: "Environment variables"
+description: "Full reference for every variable in backend-node/.env and backend-python/.env."
+---
+
+<Warning>
+  Never commit `.env` files to version control. Both files contain secrets (session keys, API keys, database passwords). Add them to `.gitignore` before your first commit.
+</Warning>
+
+## backend-node/.env
+
+Controls database connectivity, session security, authentication providers, and CORS.
+
+### Server
+
+<ParamField path="PORT" type="number" default="3000">
+  Port the Express server listens on.
+</ParamField>
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  Runtime environment. Set to `production` to enable secure cookies, strict CORS, and production error messages.
+</ParamField>
+
+### Security and sessions
+
+<ParamField path="SESSION_SECRET" type="string" required>
+  Secret used to sign the `riwi.sid` session cookie. Use a long, random string in production.
+</ParamField>
+
+### Database (PostgreSQL — Supabase)
+
+<ParamField path="DB_HOST" type="string" required>
+  PostgreSQL host from your Supabase project settings.
+</ParamField>
+
+<ParamField path="DB_PORT" type="number" default="5432">
+  PostgreSQL port.
+</ParamField>
+
+<ParamField path="DB_NAME" type="string" required>
+  Database name (usually `postgres` on Supabase).
+</ParamField>
+
+<ParamField path="DB_USER" type="string" required>
+  Database user. On Supabase this follows the pattern `postgres.your_project_ref`.
+</ParamField>
+
+<ParamField path="DB_PASSWORD" type="string" required>
+  Database password from your Supabase project.
+</ParamField>
+
+<ParamField path="DATABASE_URL" type="string" required>
+  Full PostgreSQL connection string. Used by the session store and direct `pg` queries. Format: `postgresql://USER:PASSWORD@HOST:PORT/DB_NAME`.
+</ParamField>
+
+### Supabase
+
+<ParamField path="SUPABASE_URL" type="string" required>
+  Your Supabase project URL (e.g. `https://xyzcompany.supabase.co`).
+</ParamField>
+
+<ParamField path="SUPABASE_ANON_KEY" type="string" required>
+  Supabase `anon` public key. Used for client-side Supabase operations with RLS enforced.
+</ParamField>
+
+### Frontend connection
+
+<ParamField path="FRONTEND_URL" type="string" required>
+  The full origin URL of the frontend. Used by the CORS middleware to build the allowlist.
+
+  Example: `http://127.0.0.1:5500/frontend` (local) or `https://hecrodcode.github.io` (production).
+</ParamField>
+
+<Tip>
+  In production, `FRONTEND_URL` must match the exact origin the browser sends in the `Origin` header — including protocol, domain, and subdirectory if applicable. The Node.js gateway extracts the origin via `new URL(FRONTEND_URL).origin`, so `http://127.0.0.1:5500/frontend` becomes `http://127.0.0.1:5500`.
+</Tip>
+
+### Python connection
+
+<ParamField path="PYTHON_API_URL" type="string" default="http://localhost:8000">
+  Base URL of the Python AI microservice. The Node.js gateway forwards AI requests to this address.
+</ParamField>
+
+### Social auth — GitHub
+
+<ParamField path="GITHUB_CLIENT_ID" type="string">
+  OAuth App client ID from [github.com/settings/developers](https://github.com/settings/developers). If omitted, GitHub OAuth is disabled at startup.
+</ParamField>
+
+<ParamField path="GITHUB_CLIENT_SECRET" type="string">
+  OAuth App client secret. Required together with `GITHUB_CLIENT_ID`.
+</ParamField>
+
+### Social auth — Google
+
+<ParamField path="GOOGLE_CLIENT_ID" type="string">
+  OAuth 2.0 client ID from [console.cloud.google.com](https://console.cloud.google.com). If omitted, Google OAuth is disabled at startup.
+</ParamField>
+
+<ParamField path="GOOGLE_CLIENT_SECRET" type="string">
+  OAuth 2.0 client secret. Required together with `GOOGLE_CLIENT_ID`.
+</ParamField>
+
+### SMTP (email / OTP)
+
+<ParamField path="SMTP_HOST" type="string" default="smtp.gmail.com">
+  SMTP server hostname.
+</ParamField>
+
+<ParamField path="SMTP_PORT" type="number" default="465">
+  SMTP server port.
+</ParamField>
+
+<ParamField path="SMTP_SECURE" type="boolean" default="true">
+  Use TLS for the SMTP connection.
+</ParamField>
+
+<ParamField path="SMTP_USER" type="string" required>
+  Email address used to send OTP and notification emails.
+</ParamField>
+
+<ParamField path="SMTP_PASS" type="string" required>
+  App password for the SMTP account (not your normal login password). For Gmail, generate one at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+</ParamField>
+
+<ParamField path="SMTP_FROM" type="string" required>
+  Sender display name and address. Example: `"Kairo <no-reply@example.com>"`.
+</ParamField>
+
+### AI API key
+
+<ParamField path="RIWI_IA_KEY" type="string" required>
+  API key passed to the AI service for authenticated requests between the Node.js gateway and the Python microservice.
+</ParamField>
+
+---
+
+## backend-python/.env
+
+Controls the AI microservice's model, Supabase access, and CORS origins.
+
+### Server
+
+<ParamField path="PORT" type="number" default="8000">
+  Port Uvicorn listens on. Pass this as `--port` when starting the server.
+</ParamField>
+
+<ParamField path="ENV" type="string" default="development">
+  Runtime environment (`development` or `production`).
+</ParamField>
+
+### AI model
+
+<ParamField path="OPENAI_API_KEY" type="string" required>
+  API key for the Groq-hosted LLM. The Python service uses the OpenAI-compatible Groq API.
+</ParamField>
+
+<ParamField path="MODEL_NAME" type="string" default="llama-3.3-70b-versatile">
+  Model identifier. The default is `llama-3.3-70b-versatile` (Groq). You can switch to any Groq-supported model.
+</ParamField>
+
+### Supabase
+
+<ParamField path="SUPABASE_URL" type="string" required>
+  Your Supabase project URL. Must match the value in `backend-node/.env`.
+</ParamField>
+
+<ParamField path="SUPABASE_SERVICE_KEY" type="string" required>
+  Supabase `service_role` key. This key bypasses RLS — keep it secret and never expose it to the browser.
+</ParamField>
+
+### Service URLs
+
+<ParamField path="NODE_URL" type="string" default="http://localhost:3000">
+  Base URL of the Node.js gateway. Added to the Python service's CORS allowlist.
+</ParamField>
+
+<ParamField path="FRONTEND_URL" type="string" default="http://localhost:5500">
+  Frontend origin. Added to the Python service's CORS allowlist alongside `NODE_URL`.
+</ParamField>

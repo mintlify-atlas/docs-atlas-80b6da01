@@ -1,0 +1,87 @@
+---
+title: "Introduction"
+description: "Kairo is an AI-powered personalized learning platform built for Riwi's intensive bootcamp program — bridging the gap between fast-paced cohorts and individual learning needs."
+---
+
+## What is Kairo?
+
+Kairo is the intelligent learning ecosystem for [Riwi](https://riwi.io)'s 11-month software development bootcamp. It analyzes each student's technical performance and soft skills to generate dynamic, personalized 4-week growth paths — ensuring no Coder gets left behind.
+
+The platform serves two types of users:
+
+<CardGroup cols={2}>
+  <Card title="Coders" icon="graduation-cap" href="/features/coder-dashboard">
+    Bootcamp students who receive AI-generated learning plans, practice exercises, and feedback tailored to their pace and learning style.
+  </Card>
+  <Card title="Team Leaders (TL)" icon="users" href="/features/tl-dashboard">
+    Instructors and mentors who get a real-time analytics dashboard to identify at-risk students before academic failure occurs.
+  </Card>
+</CardGroup>
+
+## Key pillars
+
+<CardGroup cols={2}>
+  <Card title="Adaptive learning" icon="brain">
+    Generates custom 4-week study plans from Moodle progress data and soft skills self-assessments.
+  </Card>
+  <Card title="Holistic growth" icon="heart">
+    Integrates emotional intelligence and communication skills directly into technical reinforcement tasks.
+  </Card>
+  <Card title="Proactive mentorship" icon="bell">
+    Alerts Team Leaders to at-risk students using automated risk scoring based on scores and behavior patterns.
+  </Card>
+  <Card title="Hybrid intelligence" icon="microchip">
+    Node.js orchestrates business logic while Python/FastAPI runs local LLM inference and predictive analytics.
+  </Card>
+</CardGroup>
+
+## Architecture overview
+
+Kairo is a distributed system with three independently deployed services:
+
+| Service | Technology | Responsibility |
+|---|---|---|
+| **API Gateway** | Node.js + Express | Authentication, business logic, routing |
+| **AI Microservice** | Python + FastAPI | LLM inference, plan generation, RAG search |
+| **Database** | PostgreSQL (Supabase) | Persistent storage, RLS policies |
+
+The frontend is a Multi-Page Application (MPA) served via static hosting (e.g. GitHub Pages), communicating with the Node.js gateway over REST.
+
+## Tech stack
+
+**Frontend**
+- HTML5, CSS3, Vanilla JavaScript
+- Bootstrap 5 for responsive layout
+- EJS templates for server-side rendering
+
+**Backend**
+- Node.js + Express 5 (API Gateway)
+- Python 3 + FastAPI (AI Microservice)
+- Passport.js for OAuth (Google, GitHub)
+
+**AI / ML**
+- Groq-hosted Qwen2.5-7B-Instruct model
+- LangChain for prompt orchestration and JSON output validation
+- `all-MiniLM-L6-v2` embeddings (384 dimensions) for semantic resource search
+
+**Database**
+- PostgreSQL 14+ hosted on Supabase
+- Row-Level Security (RLS) policies
+- Custom ENUM types for roles, risk levels, and AI agents
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get both backend services running in under 10 minutes.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Deep-dive into how the services communicate.
+  </Card>
+  <Card title="Environment setup" icon="gear" href="/setup/environment">
+    Configure all required environment variables.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/auth">
+    Explore the full REST API surface.
+  </Card>
+</CardGroup>

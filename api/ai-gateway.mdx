@@ -1,0 +1,157 @@
+---
+title: 'AI gateway endpoints'
+description: 'Node.js proxy routes that forward AI requests to the Python microservice.'
+---
+
+<Note>
+  These endpoints are **Node.js-side proxies**. The Node.js backend authenticates
+  the request, enforces role requirements, and then forwards the payload to the
+  Python AI microservice. You should not call the Python service directly from
+  the browser in production — always go through these routes.
+</Note>
+
+All routes require an active session cookie. See the individual endpoint notes
+for role requirements.
+
+---
+
+## POST /api/ai/generate-plan
+
+Proxies a plan generation request to `POST /generate-plan` on the Python
+microservice. The coder's `coder_id` and `module_id` are resolved server-side;
+you only need to supply optional overrides.
+
+**Role required:** `coder`
+
+### Request body
+
+The body is forwarded verbatim to the Python service. See
+[POST /generate-plan](/api/ai/generate-plan) for the full field reference.
+
+<ParamField body="plan_type" type="string" default="interpretive">
+  `interpretive` or `analytical`.
+</ParamField>
+
+<ParamField body="current_week" type="number" default="1">
+  Current week number in the module.
+</ParamField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/ai/generate-plan \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"plan_type": "analytical", "current_week": 3}'
+```
+
+---
+
+## POST /api/ai/generate-focus-cards
+
+Proxies a focus-card generation request to `POST /generate-focus-cards` on
+the Python microservice.
+
+**Role required:** `coder`
+
+### Request body
+
+See [POST /generate-focus-cards](/api/ai/focus-cards) for the full field
+reference.
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/ai/generate-focus-cards \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "coder_id": 42,
+    "module_id": 4,
+    "struggling_topics": ["SQL JOINs", "Indexes"]
+  }'
+```
+
+---
+
+## POST /api/ai/generate-report
+
+Proxies a clan performance report request to `POST /generate-report` on the
+Python microservice.
+
+**Role required:** `tl`
+
+### Request body
+
+See [POST /generate-report](/api/ai/reports) for the full field reference.
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/ai/generate-report \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "clan": "turing",
+    "tl_id": 7,
+    "total_coders": 12,
+    "average_score": 74.5,
+    "high_risk_count": 2,
+    "top_struggling_topics": ["SQL JOINs", "Normalization"]
+  }'
+```
+
+---
+
+## GET /api/ai/health
+
+Checks whether the Python AI microservice is reachable and returns its status
+info. Useful for monitoring and debugging.
+
+**Role required:** Any authenticated user
+
+### Response
+
+<ResponseField name="status" type="string">`"online"` when the service is healthy.</ResponseField>
+<ResponseField name="service" type="string">Service name.</ResponseField>
+<ResponseField name="version" type="string">Microservice version (e.g. `"2.3.0"`).</ResponseField>
+<ResponseField name="model" type="string">Active LLM model name.</ResponseField>
+<ResponseField name="embeddings" type="string">Embedding model status.</ResponseField>
+<ResponseField name="environment" type="string">`development` or `production`.</ResponseField>
+<ResponseField name="endpoints" type="string[]">
+  List of available AI endpoints on the Python service.
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/ai/health \
+  -b cookies.txt
+```
+
+```json
+{
+  "status": "online",
+  "service": "Kairo AI Engine",
+  "version": "2.3.0",
+  "model": "llama-3.3-70b-versatile",
+  "embeddings": "all-MiniLM-L6-v2 (384d)",
+  "environment": "production",
+  "endpoints": [
+    "POST /generate-plan",
+    "POST /generate-focus-cards",
+    "POST /chat/ask",
+    "POST /generate-report",
+    "POST /generate-exercise",
+    "POST /exercise/{id}/submit",
+    "POST /search-resources"
+  ]
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `401`  | No active session. |
+| `502`  | Python microservice is unreachable. |

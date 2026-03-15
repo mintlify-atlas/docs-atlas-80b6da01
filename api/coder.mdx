@@ -1,0 +1,634 @@
+---
+title: 'Coder endpoints'
+description: 'Endpoints available to authenticated coders with completed onboarding.'
+---
+
+<Note>
+  All routes under `/api/coder/` require:
+  1. An active session cookie (`riwi.sid`).
+  2. The authenticated user must have the `coder` role.
+  3. Onboarding must be complete (`first_login = false`). Requests from coders who have not finished onboarding receive `403`.
+</Note>
+
+---
+
+## GET /api/coder/dashboard
+
+Returns everything the coder dashboard needs in a single request: user profile,
+soft-skills assessment, Moodle progress, active AI plan summary, TL feedback
+notifications, risk flags, and recent performance test history.
+
+### Response
+
+<ResponseField name="user" type="object">
+  <Expandable title="properties">
+    <ResponseField name="fullName" type="string">Display name.</ResponseField>
+    <ResponseField name="email" type="string">Email address.</ResponseField>
+    <ResponseField name="clanId" type="string">Clan identifier.</ResponseField>
+    <ResponseField name="role" type="string">Always `coder`.</ResponseField>
+    <ResponseField name="kairoScore" type="number">Current gamification score (default 50).</ResponseField>
+    <ResponseField name="moduleId" type="number">Current module ID.</ResponseField>
+    <ResponseField name="moduleName" type="string">Current module name.</ResponseField>
+    <ResponseField name="moduleTotalWeeks" type="number">Total weeks in the module.</ResponseField>
+    <ResponseField name="isModuleCritical" type="boolean">Whether the module is marked critical.</ResponseField>
+    <ResponseField name="learningStyleCache" type="string">Cached learning style from the diagnostic.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="softSkills" type="object">
+  `null` if the diagnostic has not been completed.
+  <Expandable title="properties">
+    <ResponseField name="autonomy" type="number">Score 1–5.</ResponseField>
+    <ResponseField name="timeManagement" type="number">Score 1–5.</ResponseField>
+    <ResponseField name="problemSolving" type="number">Score 1–5.</ResponseField>
+    <ResponseField name="communication" type="number">Score 1–5.</ResponseField>
+    <ResponseField name="teamwork" type="number">Score 1–5.</ResponseField>
+    <ResponseField name="learningStyle" type="string">e.g. `visual`, `kinesthetic`.</ResponseField>
+    <ResponseField name="assessedAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="average" type="number">Mean of all five skill scores.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="progress" type="object">
+  <Expandable title="properties">
+    <ResponseField name="currentWeek" type="number">Active week number (default 1).</ResponseField>
+    <ResponseField name="averageScore" type="number">Moodle average score. `null` when no data exists yet.</ResponseField>
+    <ResponseField name="strugglingTopics" type="string[]">Topics with low performance.</ResponseField>
+    <ResponseField name="weeksCompleted" type="object[]" >Raw weeks-completed history from Moodle.</ResponseField>
+    <ResponseField name="weeksCompletedCount" type="number">Number of weeks completed.</ResponseField>
+    <ResponseField name="updatedAt" type="string">Last sync timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="activePlan" type="object">
+  `null` when no active plan exists.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Plan ID.</ResponseField>
+    <ResponseField name="targetedSoftSkill" type="string">Soft skill the plan focuses on.</ResponseField>
+    <ResponseField name="planType" type="string">`interpretive` or `analytical`.</ResponseField>
+    <ResponseField name="generatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="notifications" type="object">
+  <Expandable title="properties">
+    <ResponseField name="unread" type="number">Count of unread feedback items.</ResponseField>
+    <ResponseField name="items" type="object[]">Last 5 TL feedback messages.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="riskFlags" type="object[]">
+  Up to 3 unresolved risk flags for this coder.
+</ResponseField>
+
+<ResponseField name="performanceTests" type="object[]">
+  Last 3 performance test results.
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/coder/dashboard \
+  -b cookies.txt
+```
+
+---
+
+## GET /api/coder/plan
+
+Returns the coder's currently active complementary plan, including completed
+days and the next pending day.
+
+### Response
+
+<ResponseField name="hasPlan" type="boolean">`false` when no active plan exists.</ResponseField>
+
+<ResponseField name="plan" type="object">
+  `null` when `hasPlan` is `false`.
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Plan ID.</ResponseField>
+    <ResponseField name="moduleId" type="number">Module the plan targets.</ResponseField>
+    <ResponseField name="planContent" type="object">Full plan JSON generated by the AI.</ResponseField>
+    <ResponseField name="targetedSoftSkill" type="string">Soft skill focus.</ResponseField>
+    <ResponseField name="generatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="completedDays" type="object">Map of `dayNumber → { completedAt }` for each finished day.</ResponseField>
+    <ResponseField name="currentDay" type="number">First day not yet completed (1–20).</ResponseField>
+    <ResponseField name="completedCount" type="number">Total days completed.</ResponseField>
+    <ResponseField name="isComplete" type="boolean">`true` when all 20 days are done.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/coder/plan \
+  -b cookies.txt
+```
+
+```json
+{
+  "hasPlan": true,
+  "plan": {
+    "id": 17,
+    "moduleId": 4,
+    "currentDay": 3,
+    "completedCount": 2,
+    "isComplete": false
+  }
+}
+```
+
+---
+
+## POST /api/coder/plan/request
+
+Triggers asynchronous AI plan generation. The response is returned immediately;
+the plan is generated in the background by the Python microservice.
+Call `GET /api/coder/plan` after a few seconds to retrieve the result.
+
+### Request body
+
+<ParamField body="plan_type" type="string" default="interpretive">
+  `interpretive` or `analytical`. Analytical plans use Moodle progress data.
+</ParamField>
+
+<ParamField body="current_week" type="number" default="1">
+  Current week number within the module.
+</ParamField>
+
+### Response
+
+<ResponseField name="requested" type="boolean">`true` when the request was accepted.</ResponseField>
+<ResponseField name="message" type="string">Status message.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/coder/plan/request \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"plan_type": "analytical", "current_week": 3}'
+```
+
+```json
+{
+  "requested": true,
+  "message": "Plan en generación. Reintenta en unos segundos."
+}
+```
+
+---
+
+## POST /api/coder/plan/:planId/day/:day/complete
+
+Marks a specific day (1–20) of a plan as complete, updates the `completed_days`
+JSONB field, awards Kairo Score points, and returns the updated state.
+
+### Path parameters
+
+<ParamField path="planId" type="number" required>
+  ID of the active plan.
+</ParamField>
+
+<ParamField path="day" type="number" required>
+  Day number to mark complete. Must be between 1 and 20.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="completedDays" type="object">Updated map of completed days.</ResponseField>
+<ResponseField name="completedCount" type="number">Total completed days after this update.</ResponseField>
+<ResponseField name="nextDay" type="number">Next pending day, or `null` if the plan is complete.</ResponseField>
+<ResponseField name="isComplete" type="boolean">`true` when all 20 days are done.</ResponseField>
+<ResponseField name="kairoScore" type="number">Updated Kairo Score for the coder.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/coder/plan/17/day/3/complete \
+  -b cookies.txt
+```
+
+```json
+{
+  "success": true,
+  "completedCount": 3,
+  "nextDay": 4,
+  "isComplete": false,
+  "kairoScore": 75
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | Day number is outside the 1–20 range. |
+| `404`  | Plan not found or not active for this coder. |
+
+---
+
+## GET /api/coder/plans/:planId
+
+Returns full details for a specific plan, including all associated activities.
+
+### Path parameters
+
+<ParamField path="planId" type="number" required>
+  Plan ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="plan" type="object">
+  Full plan row with an `activities` array joined from `plan_activities`.
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/coder/plans/17 \
+  -b cookies.txt
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `404`  | Plan not found or does not belong to this coder. |
+
+---
+
+## POST /api/coder/exercise/generate
+
+Requests an AI-generated exercise for a specific plan day. Results are cached —
+repeated calls for the same `planId` + `dayNumber` return the cached exercise
+without calling the Python service again.
+
+### Request body
+
+<ParamField body="planId" type="number" required>
+  Plan the exercise belongs to.
+</ParamField>
+
+<ParamField body="dayNumber" type="number" required>
+  Day within the plan (1–20).
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  Topic of the exercise (e.g. `"SQL JOINs"`).
+</ParamField>
+
+<ParamField body="weekNumber" type="number" default="1">
+  Week number within the module.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional additional context for the exercise.
+</ParamField>
+
+<ParamField body="difficulty" type="string" default="intermediate">
+  `beginner`, `intermediate`, or `advanced`.
+</ParamField>
+
+<ParamField body="moduleName" type="string" default="Bases de Datos">
+  Module name used for language auto-detection.
+</ParamField>
+
+<ParamField body="language" type="string">
+  Override language detection. e.g. `sql`, `python`, `javascript`, `html`.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` when an exercise is returned.</ResponseField>
+<ResponseField name="cached" type="boolean">`true` when the result came from cache.</ResponseField>
+<ResponseField name="exercise" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Exercise ID (absent on cache hit from Node).</ResponseField>
+    <ResponseField name="title" type="string">Exercise title.</ResponseField>
+    <ResponseField name="description" type="string">Problem statement.</ResponseField>
+    <ResponseField name="language" type="string">Programming language.</ResponseField>
+    <ResponseField name="difficulty" type="string">Difficulty level.</ResponseField>
+    <ResponseField name="topic" type="string">Topic covered.</ResponseField>
+    <ResponseField name="starter_code" type="string">Boilerplate code.</ResponseField>
+    <ResponseField name="solution" type="string">Reference solution.</ResponseField>
+    <ResponseField name="expected_output" type="string">Expected output description.</ResponseField>
+    <ResponseField name="hints" type="string[]">Hints array.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/coder/exercise/generate \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "planId": 17,
+    "dayNumber": 3,
+    "topic": "SQL JOINs",
+    "weekNumber": 2,
+    "difficulty": "intermediate"
+  }'
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | `planId`, `dayNumber`, or `topic` missing. |
+| `502`  | Python microservice unreachable or returned an error. |
+
+---
+
+## POST /api/coder/exercise/:exerciseId/submit
+
+Submits the coder's code solution for an exercise. TL reviews submissions
+manually — there is no automated grading. Awards Kairo Score points on submit.
+
+### Path parameters
+
+<ParamField path="exerciseId" type="number" required>
+  ID of the exercise being submitted.
+</ParamField>
+
+### Request body
+
+<ParamField body="code" type="string" required>
+  The coder's solution code. Must not be empty.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="submissionId" type="number">ID of the newly created submission.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/coder/exercise/55/submit \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"code": "SELECT * FROM users JOIN orders ON users.id = orders.user_id;"}'
+```
+
+```json
+{
+  "success": true,
+  "submissionId": 201,
+  "message": "¡Solución enviada! Tu TL podrá revisarla."
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | `code` field is empty. |
+| `404`  | Exercise not found or does not belong to this coder's plan. |
+| `500`  | Database error. |
+
+---
+
+## GET /api/coder/exercise/:exerciseId/submissions
+
+Returns the last 5 submissions the coder made for a specific exercise.
+
+### Path parameters
+
+<ParamField path="exerciseId" type="number" required>
+  Exercise ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="submissions" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="number">Submission ID.</ResponseField>
+    <ResponseField name="code_submitted" type="string">The submitted code.</ResponseField>
+    <ResponseField name="submitted_at" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/coder/exercise/55/submissions \
+  -b cookies.txt
+```
+
+---
+
+## GET /api/coder/resources
+
+Lists all active PDF resources uploaded by the clan's TL. Supports optional
+filtering by module.
+
+### Query parameters
+
+<ParamField query="moduleId" type="number">
+  Filter resources by module ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="resources" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="id" type="number">Resource ID.</ResponseField>
+    <ResponseField name="title" type="string">Resource title.</ResponseField>
+    <ResponseField name="file_name" type="string">Original file name.</ResponseField>
+    <ResponseField name="preview_text" type="string">Extracted text preview.</ResponseField>
+    <ResponseField name="uploaded_at" type="string">Upload timestamp.</ResponseField>
+    <ResponseField name="module_id" type="number">Associated module.</ResponseField>
+    <ResponseField name="module_name" type="string">Module name.</ResponseField>
+    <ResponseField name="tl_name" type="string">Name of the TL who uploaded it.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl "https://api.kairo.app/api/coder/resources?moduleId=4" \
+  -b cookies.txt
+```
+
+---
+
+## GET /api/coder/resource/:id/download
+
+Generates a short-lived signed URL (1 hour) for downloading a PDF resource
+from Supabase Storage.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Resource ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="url" type="string">Signed download URL, valid for 1 hour.</ResponseField>
+<ResponseField name="fileName" type="string">Original file name for the download.</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/coder/resource/8/download \
+  -b cookies.txt
+```
+
+```json
+{
+  "url": "https://storage.supabase.co/signed/activity-resources/...",
+  "fileName": "sql-guide.pdf"
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `404`  | Resource not found or not in this coder's clan. |
+| `500`  | Signed URL generation failed. |
+
+---
+
+## POST /api/coder/resources/search
+
+Searches clan resources by topic using semantic search (via Python RAG) with
+an automatic fallback to PostgreSQL full-text search.
+
+### Request body
+
+<ParamField body="topic" type="string" required>
+  Search query or topic name (e.g. `"SQL GROUP BY"`).
+</ParamField>
+
+<ParamField body="moduleId" type="number">
+  Optional module filter.
+</ParamField>
+
+<ParamField body="limit" type="number" default="3">
+  Maximum number of results.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` always (empty array on no results).</ResponseField>
+<ResponseField name="resources" type="object[]">
+  Each item includes `id`, `title`, `file_name`, `preview_text`, `similarity`, and a signed `download_url`.
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST https://api.kairo.app/api/coder/resources/search \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"topic": "SQL GROUP BY", "moduleId": 4, "limit": 3}'
+```
+
+---
+
+## PATCH /api/coder/activities/:id/complete
+
+Marks a plan activity as complete and optionally saves a reflection and time
+spent. Uses `INSERT ... ON CONFLICT DO UPDATE` — safe to call multiple times.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Activity ID from `plan_activities`.
+</ParamField>
+
+### Request body
+
+<ParamField body="reflectionText" type="string">
+  Optional reflection note written by the coder.
+</ParamField>
+
+<ParamField body="timeSpent" type="number">
+  Time spent on the activity in minutes.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="data" type="object">The upserted `activity_progress` row.</ResponseField>
+
+### Example
+
+```bash
+curl -X PATCH https://api.kairo.app/api/coder/activities/102/complete \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"reflectionText": "Practiqué JOINs en 3 tablas.", "timeSpent": 45}'
+```
+
+---
+
+## PATCH /api/coder/feedback/:id/read
+
+Marks a TL feedback item as read and notifies the TL in real-time via the
+SSE notification service.
+
+### Path parameters
+
+<ParamField path="id" type="number" required>
+  Feedback ID from `tl_feedback`.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="message" type="string">`"Feedback marked as read"`</ResponseField>
+
+### Example
+
+```bash
+curl -X PATCH https://api.kairo.app/api/coder/feedback/33/read \
+  -b cookies.txt
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `404`  | Feedback item not found or does not belong to this coder. |
+
+---
+
+## GET /api/coder/milestones
+
+Returns the coder's Moodle progress history broken down by module and week,
+ordered by week number.
+
+### Response
+
+<ResponseField name="milestones" type="object[]">
+  <Expandable title="item properties">
+    <ResponseField name="module_name" type="string">Module name.</ResponseField>
+    <ResponseField name="week_number" type="number">Week number.</ResponseField>
+    <ResponseField name="week_name" type="string">Week label.</ResponseField>
+    <ResponseField name="average_score" type="number">Moodle average score for that week.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl https://api.kairo.app/api/coder/milestones \
+  -b cookies.txt
+```
+
+```json
+{
+  "milestones": [
+    { "module_name": "Bases de Datos", "week_number": 1, "week_name": "Semana 1", "average_score": 82 },
+    { "module_name": "Bases de Datos", "week_number": 2, "week_name": "Semana 2", "average_score": 76 }
+  ]
+}
+```

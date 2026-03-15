@@ -1,0 +1,179 @@
+---
+title: 'Exercise endpoints'
+description: 'Generate and submit coding exercises for a specific plan day.'
+---
+
+<Note>
+  These are **Python AI microservice** endpoints. In production they are called
+  through the Node.js coder proxy at `POST /api/coder/exercise/generate` and
+  `POST /api/coder/exercise/:exerciseId/submit`. See the
+  [Coder endpoints reference](/api/coder) for the authenticated routes.
+</Note>
+
+---
+
+## POST /generate-exercise
+
+Generates a personalized coding exercise for a specific plan day. Results are
+cached by `(plan_id, day_number)` — repeated requests for the same day return
+the cached exercise instantly without re-invoking the LLM.
+
+### Request body
+
+<ParamField body="coder_id" type="number" required>
+  ID of the coder. Used to fetch their soft-skills profile for personalisation.
+</ParamField>
+
+<ParamField body="plan_id" type="number" required>
+  ID of the complementary plan this exercise belongs to.
+</ParamField>
+
+<ParamField body="day_number" type="number" required>
+  Day within the plan (1–20). Together with `plan_id`, forms the cache key.
+</ParamField>
+
+<ParamField body="week_number" type="number" required>
+  Week number within the module.
+</ParamField>
+
+<ParamField body="topic" type="string" required>
+  Topic of the exercise (e.g. `"SQL GROUP BY"`).
+</ParamField>
+
+<ParamField body="description" type="string" default="">
+  Additional context or requirements for the exercise.
+</ParamField>
+
+<ParamField body="difficulty" type="string" default="intermediate">
+  `beginner`, `intermediate`, or `advanced`.
+</ParamField>
+
+<ParamField body="module_name" type="string" default="Bases de Datos">
+  Module name. Used to auto-detect the programming language when `language`
+  is not provided.
+</ParamField>
+
+<ParamField body="language" type="string">
+  Override language auto-detection. Supported values: `sql`, `python`,
+  `javascript`, `html`.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` when an exercise is returned. `false` on fallback.</ResponseField>
+
+<ResponseField name="cached" type="boolean">`true` when the result came from the database cache.</ResponseField>
+
+<ResponseField name="exercise" type="object">
+  <Expandable title="properties">
+    <ResponseField name="id" type="number">Exercise database ID (present after first generation).</ResponseField>
+    <ResponseField name="title" type="string">Exercise title.</ResponseField>
+    <ResponseField name="description" type="string">Problem statement.</ResponseField>
+    <ResponseField name="language" type="string">Programming language.</ResponseField>
+    <ResponseField name="difficulty" type="string">Difficulty level.</ResponseField>
+    <ResponseField name="topic" type="string">Topic covered.</ResponseField>
+    <ResponseField name="starter_code" type="string">Boilerplate for the coder to start from.</ResponseField>
+    <ResponseField name="solution" type="string">Reference solution (visible to TL).</ResponseField>
+    <ResponseField name="expected_output" type="string">Description of the expected output.</ResponseField>
+    <ResponseField name="hints" type="string[]">Up to 2 hints.</ResponseField>
+    <ResponseField name="status" type="string">`"fallback"` when LLM failed and a placeholder was returned.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/generate-exercise \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 42,
+    "plan_id": 17,
+    "day_number": 3,
+    "week_number": 2,
+    "topic": "SQL GROUP BY",
+    "difficulty": "intermediate",
+    "module_name": "Bases de Datos"
+  }'
+```
+
+```json
+{
+  "success": true,
+  "cached": false,
+  "exercise": {
+    "id": 55,
+    "title": "Aggregate sales by category",
+    "description": "Write a SQL query that groups orders by product category and returns the total sales for each.",
+    "language": "sql",
+    "difficulty": "intermediate",
+    "topic": "SQL GROUP BY",
+    "starter_code": "SELECT \n  -- your query here\nFROM orders o\nJOIN products p ON o.product_id = p.id\n",
+    "solution": "SELECT p.category, SUM(o.amount) AS total_sales FROM orders o JOIN products p ON o.product_id = p.id GROUP BY p.category;",
+    "expected_output": "One row per category with the summed total_sales.",
+    "hints": ["Use GROUP BY after the JOIN.", "SUM() aggregates numeric columns."],
+    "status": "ok"
+  }
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `500`  | Groq API call failed (returns fallback exercise with `success: false`). |
+
+---
+
+## POST /exercise/{exercise_id}/submit
+
+Saves a coder's code submission for a given exercise. There is no automated
+grading — the TL reviews submissions manually via `POST /api/tl/submissions/:id/review`.
+
+### Path parameters
+
+<ParamField path="exercise_id" type="number" required>
+  ID of the exercise being submitted.
+</ParamField>
+
+### Request body
+
+<ParamField body="coder_id" type="number" required>
+  ID of the coder submitting the solution.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The coder's solution code. Must not be empty.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">`true` on success.</ResponseField>
+<ResponseField name="submission_id" type="number">ID of the newly created submission.</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+
+### Example
+
+```bash
+curl -X POST http://localhost:8000/exercise/55/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coder_id": 42,
+    "code": "SELECT p.category, SUM(o.amount) AS total FROM orders o JOIN products p ON o.product_id = p.id GROUP BY p.category;"
+  }'
+```
+
+```json
+{
+  "success": true,
+  "submission_id": 201,
+  "message": "¡Solución enviada! Tu TL podrá revisar tu código."
+}
+```
+
+### Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | `coder_id` is missing. |
+| `400`  | `code` is empty. |
+| `500`  | Submission could not be saved to the database. |

@@ -1,0 +1,64 @@
+---
+title: 'POST /chat/ask'
+description: 'Ask the Kairo AI tutor a programming question and receive a concise answer.'
+---
+
+<Note>
+  This is a **Python AI microservice** endpoint at `POST /chat/ask`.
+  The `/chat` prefix comes from the router's `prefix="/chat"` setting.
+  The full path from the service root is `/chat/ask`.
+</Note>
+
+Sends a question to the Kairo AI tutor (powered by Llama 3.3 via Groq).
+The tutor responds in a concise, practical style — a short answer first,
+then explanation if needed, up to 3 paragraphs.
+
+---
+
+## Request body
+
+<ParamField body="message" type="string" required>
+  The question or message to send to the AI tutor. Must not be empty or
+  whitespace-only.
+</ParamField>
+
+<ParamField body="coder_id" type="number">
+  Optional coder ID. Not currently used to personalise the response but
+  may be used for future context enrichment.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="reply" type="string">
+  The AI tutor's response text. Maximum ~600 tokens.
+</ResponseField>
+
+---
+
+## Example
+
+```bash
+curl -X POST http://localhost:8000/chat/ask \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is the difference between INNER JOIN and LEFT JOIN?",
+    "coder_id": 42
+  }'
+```
+
+```json
+{
+  "reply": "An INNER JOIN returns only rows where there is a match in both tables. A LEFT JOIN returns all rows from the left table, plus matched rows from the right — unmatched right rows are filled with NULL.\n\nUse INNER JOIN when you only care about records that exist in both tables. Use LEFT JOIN when you want all records from the primary table regardless of whether a related record exists.\n\nExample: SELECT u.name, o.total FROM users u LEFT JOIN orders o ON u.id = o.user_id;"
+}
+```
+
+---
+
+## Errors
+
+| Status | Description |
+|--------|-------------|
+| `400`  | `message` is empty or contains only whitespace. |
+| `500`  | AI tutor temporarily unavailable (Groq API error). |

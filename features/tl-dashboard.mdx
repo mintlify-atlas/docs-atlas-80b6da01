@@ -1,0 +1,87 @@
+---
+title: "Team Leader dashboard"
+description: "Analytics hub for monitoring your clan's progress, onboarding status, risk flags, and exercise submissions."
+---
+
+The TL dashboard is your command center for monitoring every Coder in your clan. It loads on login and gives you an instant snapshot of academic performance, soft skills distribution, onboarding completion, and at-risk students.
+
+## Clan-based filtering
+
+All data on the TL dashboard is scoped to your clan. Kairo reads your `users.clan` field at login and filters every query to that value. The three clans in the Riwi bootcamp are:
+
+- **Turing**
+- **Tesla**
+- **McCarthy**
+
+The clan name appears as a gradient heading at the top of the page: **Clan Turing**, for example. You cannot view data from other clans.
+
+## Overview stats
+
+Five stat cards give you a high-level view of your clan:
+
+| Stat | Description |
+|---|---|
+| **Coders en el clan** | Total coders with `role = 'coder'` and `clan = your clan` |
+| **Onboarding completo** | Coders where `first_login = FALSE` |
+| **Pendientes** | Coders where `first_login = TRUE` (haven't completed the diagnostic) |
+| **En riesgo** | Coders with an unresolved `risk_flags` row where `risk_level IN ('high', 'critical')` |
+| **Score promedio** | Average `kairo_score` across all active coders in your clan |
+
+The **En riesgo** count also appears as an orange badge in the topbar for quick visibility.
+
+## Soft skills and learning style charts
+
+The left column shows two aggregate charts for your clan:
+
+- **Habilidades blandas del clan** — average scores for `autonomy`, `time_management`, `problem_solving`, `communication`, and `teamwork` across all coders who have completed onboarding.
+- **Estilos de aprendizaje** — a pie chart breaking down the distribution of `learning_style` values (`visual`, `auditory`, `kinesthetic`, `mixed`) in your clan.
+
+## Coder table
+
+The scrollable table below the charts lists every Coder in your clan with:
+
+- Full name and email
+- Current Moodle score (`moodle_progress.average_score`)
+- Current week (`moodle_progress.current_week`)
+- Learning style (`soft_skills_assessment.learning_style`)
+- Risk status badge (populated from `risk_flags`)
+
+You can filter the table by **Todos**, **En riesgo**, or **Pendientes** using the chip buttons.
+
+## Coder detail panel
+
+Click any row to open the detail panel on the right. It shows:
+
+- Name, clan tag, and email
+- Module week and Moodle score
+- Learning style
+- Soft skill bars for all five dimensions
+- A risk badge if an unresolved flag exists
+
+From this panel you can also send feedback directly to the selected Coder — see [TL feedback](/features/feedback).
+
+## Exercise submissions
+
+Below the main grid, the **Ejercicios enviados por el clan** section lists up to 50 recent exercise submissions from your clan. Click a row to open the review modal where you can read the coder's code, check the expected output, and submit written feedback.
+
+## Risk flag indicators
+
+Risk badges appear in two places: the **En riesgo** stat card and inline in the Coder table. Badges are color-coded:
+
+- **High** — red warning
+- **Medium** — amber caution
+- **Low** — green, no badge shown
+
+For the full risk detection logic and resolution workflow, see [Risk detection](/features/risk-detection).
+
+## Coder analytics
+
+To deep-dive into an individual Coder's performance metrics, activity completion, and score history, see [Coder analytics](/features/coder-analytics).
+
+## API endpoint
+
+```http
+GET /api/tl/dashboard
+```
+
+Returns the TL profile, full list of clan coders with soft skills and risk data, overview stats, and aggregated soft skills averages.
