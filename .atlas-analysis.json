@@ -1,0 +1,137 @@
+{
+  "projectType": "saas",
+  "projectName": "Kairo — Riwi Learning Platform",
+  "projectDescription": "An AI-powered personalized learning platform for Riwi bootcamp students (Coders) and Team Leaders, generating adaptive 4-week study plans and holistic growth paths using a hybrid Node.js/Python architecture.",
+  "theme": "almond",
+  "primaryColor": "#4F46E5",
+  "lightColor": "#EEF2FF",
+  "darkColor": "#1E1B4B",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Overview",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "setup/environment",
+              "setup/database",
+              "setup/running-locally"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Features",
+        "groups": [
+          {
+            "group": "For Coders",
+            "pages": [
+              "features/coder-dashboard",
+              "features/onboarding",
+              "features/learning-plan",
+              "features/ai-trainer",
+              "features/assignments"
+            ]
+          },
+          {
+            "group": "For Team Leaders",
+            "pages": [
+              "features/tl-dashboard",
+              "features/coder-analytics",
+              "features/risk-detection",
+              "features/feedback"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Node.js Gateway",
+            "pages": [
+              "api/auth",
+              "api/coder",
+              "api/tl",
+              "api/ai-gateway",
+              "api/notifications"
+            ]
+          },
+          {
+            "group": "Python AI Microservice",
+            "pages": [
+              "api/ai/generate-plan",
+              "api/ai/focus-cards",
+              "api/ai/chat",
+              "api/ai/exercises",
+              "api/ai/reports",
+              "api/ai/search-resources"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Database",
+        "groups": [
+          {
+            "group": "Data Model",
+            "pages": [
+              "database/schema",
+              "database/enums",
+              "database/views"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "database/migrations",
+              "database/rls-policies"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-generated personalized 4-week learning plans based on Moodle data and soft skills assessments",
+    "Holistic growth: integrates soft skills (emotional intelligence, communication) into technical reinforcement",
+    "Team Leader analytics dashboard with proactive at-risk student detection",
+    "Hybrid Node.js (API Gateway) + Python/FastAPI (AI microservice) architecture",
+    "AI-powered focus cards, chat assistant, exercises, and resource search",
+    "Multi-role system: Coders and Team Leaders with role-based access control",
+    "Social authentication (Google, GitHub) and email OTP verification",
+    "PostgreSQL (Supabase) with custom enums for roles, risk levels, and AI agents"
+  ],
+  "publicApiSurface": [
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "POST /api/auth/verify-otp",
+    "GET /api/auth/me",
+    "GET /api/coder/dashboard",
+    "GET /api/coder/plan",
+    "POST /api/coder/plan/request",
+    "POST /api/coder/exercise/generate",
+    "POST /api/coder/resources/search",
+    "GET /api/tl/dashboard",
+    "POST /api/ai/generate-plan",
+    "POST /api/ai/generate-focus-cards",
+    "POST /api/ai/generate-report",
+    "POST /generate-plan",
+    "POST /generate-focus-cards",
+    "POST /chat/ask",
+    "POST /generate-report",
+    "POST /generate-exercise",
+    "POST /exercise/{id}/submit",
+    "POST /search-resources",
+    "GET /health"
+  ]
+}
